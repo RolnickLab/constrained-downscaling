@@ -1,1 +1,1 @@
-# constraint-ml-for-climate-downscaling
+# constrained-ml-for-climate-downscaling
