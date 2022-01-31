@@ -5,6 +5,7 @@ import torch.nn as nn
 import torchgeometry as tgm
 import argparse
 from torch.utils.data import DataLoader, TensorDataset
+import csv
 
 def add_arguments():
     parser = argparse.ArgumentParser()
@@ -34,7 +35,7 @@ def main(args):
             
         mse += l2_crit(torch.Tensor(pred), hr).item()
         mae += l1_crit(torch.Tensor(pred), hr).item()
-        ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0).unsqueeze(0)), hr.unsqueeze(0).unsqueeze(0).item()
+        ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0).unsqueeze(0), hr.unsqueeze(0).unsqueeze(0)).item()
     
     torch.save(torch.Tensor(pred[:128,:,:]), './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
     mse *= 1/input_val.shape[0]   
