@@ -107,6 +107,68 @@ class ResNet(nn.Module):
             if self.downscale_constraints:
                 out = self.downscale_constraint(out, x)
             return out  
+        
+        
+class ResNetRev(nn.Module):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False):
+        super(ResNetRev, self).__init__()
+        # First layer
+        if noise:
+            self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)
+            self.conv1 = nn.Sequential(nn.Conv2d(2, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        else:
+            self.conv1 = nn.Sequential(nn.Conv2d(1, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        #Residual Blocks
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlock(number_channels, number_channels))
+        # Second conv layer post residual blocks
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=1, stride=1, padding=0), nn.ReLU(inplace=True))
+        # Upsampling layers
+        self.upsampling = nn.ModuleList()
+        for k in range(int(np.rint(np.log2(upsampling_factor)))):
+            self.upsampling.append(nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2) )
+        # Next layer after upper sampling
+        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=1, stride=1, padding=0), nn.ReLU(inplace=True))
+        # Final output layer
+        self.conv4 = nn.Conv2d(number_channels, 1, kernel_size=1, stride=1, padding=0)      
+        #optional renomralization layer
+        if downscale_constraints:
+            if softmax_constraints:
+                self.downscale_constraint = SoftmaxConstraints(upsampling_factor=upsampling_factor)
+            else:
+                self.downscale_constraint = DownscaleConstraints(upsampling_factor=upsampling_factor)
+            
+        self.noise = noise
+        self.downscale_constraints = downscale_constraints
+    def forward(self, x, z=None): 
+        if self.noise:
+            out = self.conv_trans0(z)
+            out = self.conv1(torch.cat((x,out), dim=1))
+            for layer in self.res_blocks:
+                out = layer(out)
+            out = self.conv2(out)
+            for layer in self.upsampling:
+                out = layer(out)
+            out = self.conv3(out)
+            out = self.conv4(out)
+            if self.downscale_constraints:
+                out = self.downscale_constraint(out, x)
+            return out  
+        else:
+            
+            out = self.conv1(x)
+            for layer in self.upsampling:
+                out = layer(out)
+            out = self.conv2(out)    
+            for layer in self.res_blocks:
+                out = layer(out)
+            out = self.conv3(out)
+            out = self.conv4(out)
+            if self.downscale_constraints:
+                out = self.downscale_constraint(out, x)
+            return out  
           
                     
 class Discriminator(nn.Module):
