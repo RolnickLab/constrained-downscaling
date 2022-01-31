@@ -35,10 +35,15 @@ def run_training(args, data):
         loss = running_loss/len(data)
         if is_gan(args):
             dicsr_loss = running_discr_loss/len(data)
-        print('Epoch {}, Train Loss: {:.5f}, Discr. Loss{:.5f}'.format(
-            epoch+1, loss, discr_loss))
-
-        val_loss = validate_model(model, discriminator_model, criterion, criterion_discr, data[1], best, patience_count, args)
+            print('Epoch {}, Train Loss: {:.5f}, Discr. Loss{:.5f}'.format(
+                epoch+1, loss, discr_loss))
+        else:
+            print('Epoch {}, Train Loss: {:.5f}'.format(epoch+1, loss))
+            
+        if is_gan(args):
+            val_loss = validate_model(model, criterion, data[1], best, patience_count, args, discriminator_model, criterion_discr)
+        else:
+            val_loss = validate_model(model, criterion, data[1], best, patience_count, args)
         print('Val loss: {:.5f}'.format(val_loss))
         checkpoint(model, val_loss, best, args)
         if args.early_stop:
@@ -51,7 +56,7 @@ def run_training(args, data):
     create_report(scores, args)
     
 
-def optimizer_step(model, optmizer, criterion, inputs, targets, tepoch, args, discriminator=False):
+def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, discriminator=False):
     optimizer.zero_grad()
     outputs = model(inputs)
     loss = criterion(outputs, targets)
@@ -93,7 +98,7 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
 
     
     
-def validate_model(model, discriminator_model, criterion, criterion_discr, data, best, patience, args):
+def validate_model(model, criterion, data, best, patience, args, discriminator_model=None, criterion_discr=None):
     model.eval()
     running_loss = 0    
     with tqdm(data, unit="batch") as tepoch:       

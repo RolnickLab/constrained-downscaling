@@ -28,15 +28,27 @@ class DownscaleConstraints(nn.Module):
         super(DownscaleConstraints, self).__init__()
         self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
         self.upsampling_factor = upsampling_factor
-    def forward(self, x, x_in):
-        out = self.pool(x)
-        out = x*torch.kron(x_in*1/out, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
+    def forward(self, y, lr):
+        sum_y = self.pool(y)
+        out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
+        return out
+    
+    
+class SoftmaxConstraints(nn.Module):
+    def __init__(self, upsampling_factor):
+        super(SoftmaxConstraints, self).__init__()
+        self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
+        self.upsampling_factor = upsampling_factor
+    def forward(self, y, lr):
+        y = torch.exp(y)
+        sum_y = self.pool(y)
+        out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
 
     
 #network architecture
 class ResNet(nn.Module):
-    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False):
         super(ResNet, self).__init__()
         # First layer
         if noise:
@@ -61,7 +73,10 @@ class ResNet(nn.Module):
         self.conv4 = nn.Conv2d(number_channels, 1, kernel_size=1, stride=1, padding=0)      
         #optional renomralization layer
         if downscale_constraints:
-            self.downscale_constraint = DownscaleConstraints(upsampling_factor=upsampling_factor)
+            if softmax_constraints:
+                self.downscale_constraint = SoftmaxConstraints(upsampling_factor=upsampling_factor)
+            else:
+                self.downscale_constraint = DownscaleConstraints(upsampling_factor=upsampling_factor)
             
         self.noise = noise
         self.downscale_constraints = downscale_constraints
