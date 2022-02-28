@@ -19,6 +19,7 @@ def run_training(args, data):
         criterion_discr = get_criterion(args, discriminator=True)
     best = np.inf
     patience_count = 0 
+    is_stop = False
     for epoch in range(args.epochs):
         running_loss = 0    
         running_discr_loss = 0
@@ -152,7 +153,7 @@ def evaluate_model(model, data, args):
             for i,(inputs, targets) in enumerate(tepoch): 
                 inputs, targets = process_for_training(inputs, targets)
                 outputs = model(inputs)   
-                outputs, targets = process_for_eval(outputs, targets,data[2], data[3]) 
+                outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
                 if i == 0:
                     torch.save(outputs, './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
                 running_mse += l2_crit(outputs, targets).item()

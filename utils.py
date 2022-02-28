@@ -13,11 +13,19 @@ def load_data(args):
     mean = target_train.mean()
     std = target_train.std()
     max_val = target_train.max()
-
-    input_train = (input_train - mean)/std
-    target_train = (target_train - mean)/std
-    input_val = (input_val - mean)/std
-    target_val = (target_val - mean)/std
+    print(mean, std)
+    if args.scale == 'standard':
+        input_train = (input_train - mean)/std
+        target_train = (target_train - mean)/std
+        input_val = (input_val - mean)/std
+        target_val = (target_val - mean)/std
+    elif args.scale == 'minmax':
+        input_train = input_train /max_val
+        target_train = target_train /max_val
+        input_val = input_val/max_val
+        target_val = target_val/max_val
+    
+        
     train_data = TensorDataset(input_train, target_train)
     val_data = TensorDataset(input_val, target_val)
     train = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
@@ -28,7 +36,7 @@ def load_model(args, discriminator=False):
     if discriminator:
         model = models.Discriminator()
     else:
-        model = models.ResNetRev(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
+        model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
     model.to(device)
     return model
 
@@ -46,13 +54,18 @@ def get_criterion(args, discriminator=False):
 def process_for_training(inputs, targets): 
     inputs = inputs.to(device)            
     targets = targets.to(device)
-    inputs.unsqueeze_(1)
-    targets.unsqueeze_(1)
+    
+    #inputs.unsqueeze_(1)
+    #targets.unsqueeze_(1)
     return inputs, targets
 
-def process_for_eval(inputs, targets, mean, std): 
-    inputs = inputs*std+mean           
-    targets = targets*std+mean
+def process_for_eval(inputs, targets, mean, std, max_val, args): 
+    if args.scale == 'standard':
+        inputs = inputs*std+mean           
+        targets = targets*std+mean
+    elif args.scale == 'minmax':
+        inputs = inputs*max_val          
+        targets = targets*max_val
     return inputs, targets
 
 def is_gan(args):

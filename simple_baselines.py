@@ -33,11 +33,11 @@ def main(args):
         elif args.model == 'bicubic':
             pred[i,:,:] = np.array(Image.fromarray(im).resize((4*lr.shape[1],4*lr.shape[1]), Image.BICUBIC))
             
-        mse += l2_crit(torch.Tensor(pred), hr).item()
-        mae += l1_crit(torch.Tensor(pred), hr).item()
+        mse += l2_crit(torch.Tensor(pred[i,:,:]), hr).item()
+        mae += l1_crit(torch.Tensor(pred[i,:,:]), hr).item()
         ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0).unsqueeze(0), hr.unsqueeze(0).unsqueeze(0)).item()
     
-    torch.save(torch.Tensor(pred[:128,:,:]), './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
+    torch.save(torch.Tensor(pred[:128,:,:]).unsqueeze(1), './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
     mse *= 1/input_val.shape[0]   
     mae *= 1/input_val.shape[0] 
     ssim *= 1/input_val.shape[0] 

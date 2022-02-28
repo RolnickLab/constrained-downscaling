@@ -47,15 +47,15 @@ class SoftmaxConstraints(nn.Module):
 
     
 #network architecture
-class ResNet(nn.Module):
-    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False):
-        super(ResNet, self).__init__()
+class ResNet1(nn.Module):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False, dim=2):
+        super(ResNet1, self).__init__()
         # First layer
         if noise:
             self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)
             self.conv1 = nn.Sequential(nn.Conv2d(2, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         else:
-            self.conv1 = nn.Sequential(nn.Conv2d(1, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         #Residual Blocks
         self.res_blocks = nn.ModuleList()
         for k in range(number_residual_blocks):
@@ -70,7 +70,7 @@ class ResNet(nn.Module):
         # Next layer after upper sampling
         self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=1, stride=1, padding=0), nn.ReLU(inplace=True))
         # Final output layer
-        self.conv4 = nn.Conv2d(number_channels, 1, kernel_size=1, stride=1, padding=0)      
+        self.conv4 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)      
         #optional renomralization layer
         if downscale_constraints:
             if softmax_constraints:
@@ -109,15 +109,15 @@ class ResNet(nn.Module):
             return out  
         
         
-class ResNetRev(nn.Module):
+class ResNet2(nn.Module):
     def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False):
-        super(ResNetRev, self).__init__()
+        super(ResNet2, self).__init__()
         # First layer
         if noise:
             self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)
             self.conv1 = nn.Sequential(nn.Conv2d(2, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         else:
-            self.conv1 = nn.Sequential(nn.Conv2d(1, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+            self.conv1 = nn.Sequential(nn.Conv2d(2, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         #Residual Blocks
         self.res_blocks = nn.ModuleList()
         for k in range(number_residual_blocks):
@@ -132,7 +132,7 @@ class ResNetRev(nn.Module):
         # Next layer after upper sampling
         self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=1, stride=1, padding=0), nn.ReLU(inplace=True))
         # Final output layer
-        self.conv4 = nn.Conv2d(number_channels, 1, kernel_size=1, stride=1, padding=0)      
+        self.conv4 = nn.Conv2d(number_channels, 2, kernel_size=1, stride=1, padding=0)      
         #optional renomralization layer
         if downscale_constraints:
             if softmax_constraints:
@@ -174,10 +174,12 @@ class ResNetRev(nn.Module):
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
-        self.conv1 = nn.Sequential(nn.Conv2d(1, 64, 3, stride=1, padding=1), nn.ReLU(inplace=True))
-        self.conv2 = nn.Sequential(nn.Conv2d(64, 64, 3, stride=2, padding=1), nn.ReLU(inplace=True))
-        self.conv3 = nn.Sequential(nn.Conv2d(64, 128, 3, stride=2, padding=1), nn.ReLU(inplace=True))
-        self.conv4 = nn.Sequential(nn.Conv2d(128, 128, 3, stride=2, padding=1), nn.ReLU(inplace=True)) 
+        self.conv1 = nn.Sequential(nn.Conv2d(1, 32, 3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.conv2 = nn.Sequential(nn.Conv2d(32, 32, 3, stride=2, padding=1), nn.ReLU(inplace=True))
+        self.conv3 = nn.Sequential(nn.Conv2d(32, 64, 3, stride=2, padding=1), nn.ReLU(inplace=True))
+        self.conv4 = nn.Sequential(nn.Conv2d(64, 64, 3, stride=2, padding=1), nn.ReLU(inplace=True)) 
+        self.conv5 = nn.Sequential(nn.Conv2d(64, 128, 3, stride=2, padding=1), nn.ReLU(inplace=True))
+        self.conv6 = nn.Sequential(nn.Conv2d(128, 128, 3, stride=2, padding=1), nn.ReLU(inplace=True)) 
         self.conv9 = nn.Conv2d(128, 1, 1, stride=1, padding=1)
 
     def forward(self, x):
@@ -185,6 +187,8 @@ class Discriminator(nn.Module):
         x = self.conv2(x)    
         x = self.conv3(x)
         x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.conv6(x)
         x = self.conv9(x)
         return torch.sigmoid(F.avg_pool2d(x, x.size()[2:])).view(x.size()[0], -1)
     
