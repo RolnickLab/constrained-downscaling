@@ -6,8 +6,9 @@ import torch
 import torch.nn as nn
 import torchgeometry as tgm
 import csv
+import numpy as np
 device = 'cuda'
-
+#torch.set_default_dtype(torch.float64)
 def run_training(args, data):
     model = load_model(args)
     optimizer = get_optimizer(args, model)
@@ -20,9 +21,18 @@ def run_training(args, data):
     best = np.inf
     patience_count = 0 
     is_stop = False
+    val_losses = []
+    train_loss = []
+    if is_gan(args):
+        disc_loss = []
+        train_loss_reg = []
+        train_loss_adv = []
+        val_loss_reg = []
+        val_loss_adv = []
     for epoch in range(args.epochs):
         running_loss = 0    
         running_discr_loss = 0
+        running_adv_loss = 0
         with tqdm(data[0], unit="batch") as tepoch:       
             for (inputs, targets) in tepoch:          
                 inputs, targets = process_for_training(inputs, targets)
@@ -34,27 +44,40 @@ def run_training(args, data):
                     loss = optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args)
                     running_loss += loss
         loss = running_loss/len(data)
+        train_loss.append(loss)
         if is_gan(args):
             dicsr_loss = running_discr_loss/len(data)
             print('Epoch {}, Train Loss: {:.5f}, Discr. Loss{:.5f}'.format(
                 epoch+1, loss, discr_loss))
+            disc_loss.append(discr_loss)
         else:
             print('Epoch {}, Train Loss: {:.5f}'.format(epoch+1, loss))
             
         if is_gan(args):
-            val_loss = validate_model(model, criterion, data[1], best, patience_count, args, discriminator_model, criterion_discr)
+            val_loss = validate_model(model, criterion, data[1], best, patience_count, epoch, args, discriminator_model, criterion_discr)
         else:
-            val_loss = validate_model(model, criterion, data[1], best, patience_count, args)
+            val_loss = validate_model(model, criterion, data[1], best, patience_count, epoch, args)
+        val_losses.append(val_loss)
         print('Val loss: {:.5f}'.format(val_loss))
         checkpoint(model, val_loss, best, args)
-        if args.early_stop:
-            is_stop, patience_count = check_for_early_stopping(val_loss, best, patience_count, args)
+        #if args.early_stop:
+         #   is_stop, patience_count = check_for_early_stopping(val_loss, best, patience_count, args)
         best = np.minimum(best, val_loss)
         if is_stop:
             break
     scores = evaluate_model(model, data, args)
     print(scores)
     create_report(scores, args)
+    if is_gan(args):
+        np.save(np.array(disc_loss), './data/losses/'+args.model_id+'-'+'disc_loss.npy')
+        np.save(np.array(train_loss_reg), './data/losses/'+args.model_id+'-'+'train_loss_reg.npy')
+        np.save(np.array(train_loss_adv), './data/losses/'+args.model_id+'-'+'train_loss_adv.npy')
+        np.save(np.array(val_loss_reg), './data/losses/'+args.model_id+'-'+'val_loss_reg.npy')
+        np.save(np.array(val_loss_adv), './data/losses/'+args.model_id+'-'+'val_loss_adv.npy')
+    else:
+        np.save(np.array(train_loss), './data/losses/'+args.model_id+'-'+'train_loss.npy')
+        np.save(np.array(val_losses), './data/losses/'+args.model_id+'-'+'val_loss.npy')
+        
     
 
 def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, discriminator=False):
@@ -69,7 +92,13 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, d
     
 def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, tepoch, args):
     optimizer_discr.zero_grad()
-    outputs = model(inputs)
+    if args.noise:
+        z = np.random.normal( size=[inputs.shape[0], 100])
+        z = torch.Tensor(z).to(device)
+
+        outputs = model(inputs, z)
+    else:
+        outputs = model(inputs)
     batch_size = inputs.shape[0]
     real_label = torch.full((batch_size, 1), 1, dtype=outputs.dtype).to(device)
     fake_label = torch.full((batch_size, 1), 0, dtype=outputs.dtype).to(device)
@@ -86,7 +115,7 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
     optimizer_discr.step()
     
     optimizer.zero_grad()
-    outputs = model(inputs)
+    #outputs = model(inputs) ?
     reg_loss = criterion(outputs, targets)
     loss = args.reg_factor*reg_loss
     # Adversarial loss for real and fake images (relativistic average GAN)
@@ -99,14 +128,20 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
 
     
     
-def validate_model(model, criterion, data, best, patience, args, discriminator_model=None, criterion_discr=None):
+def validate_model(model, criterion, data, best, patience, epoch, args, discriminator_model=None, criterion_discr=None):
     model.eval()
     running_loss = 0    
     with tqdm(data, unit="batch") as tepoch:       
-        for (inputs, targets) in tepoch:          
+        for i, (inputs, targets) in enumerate(tepoch):          
             inputs, targets = process_for_training(inputs, targets)
             if is_gan(args):
-                outputs = model(inputs)
+                if args.noise:
+                    z = np.random.normal( size=[inputs.shape[0], 100])
+                    z = torch.Tensor(z).to(device)
+
+                    outputs = model(inputs, z)
+                else:
+                    outputs = model(inputs)
                 reg_loss = criterion(outputs, targets)
                 loss = args.reg_factor*reg_loss
                 batch_size = inputs.shape[0]
@@ -116,6 +151,8 @@ def validate_model(model, criterion, data, best, patience, args, discriminator_m
                 loss += args.adv_factor * adversarial_loss
             else:
                 outputs = model(inputs)
+                if i == 0:
+                    torch.save(outputs[0,0,:,:],'./data/images/'+args.model_id+'_'+str(epoch)+'.pt')
                 loss = criterion(outputs, targets)            
             running_loss += loss.item()
     loss = running_loss/len(data)
@@ -143,31 +180,42 @@ def check_for_early_stopping(val_loss, best, patience_counter, args):
 
 def evaluate_model(model, data, args):
     model.eval()
-    running_mse = 0    
-    running_ssim = 0 
-    running_mae = 0 
+    running_mse = np.zeros((args.dim,1))    
+    running_ssim = np.zeros((args.dim,1))
+    running_mae = np.zeros((args.dim,1)) 
     l2_crit = nn.MSELoss()
     l1_crit = nn.L1Loss()
-    ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4], reduction='mean')
+    
     with tqdm(data[1], unit="batch") as tepoch:       
             for i,(inputs, targets) in enumerate(tepoch): 
                 inputs, targets = process_for_training(inputs, targets)
-                outputs = model(inputs)   
+                if args.noise:
+                    z = np.random.normal( size=[inputs.shape[0], 100])
+                    z = torch.Tensor(z).to(device)
+
+                    outputs = model(inputs, z)
+                else:
+                    outputs = model(inputs)
                 outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
+                print(outputs.shape, targets.shape)
                 if i == 0:
                     torch.save(outputs, './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
-                running_mse += l2_crit(outputs, targets).item()
-                running_mae += l1_crit(outputs,targets).item()
+                for j in range(args.dim):
+                    ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4][j], reduction='mean')
+                    running_mse[j] += l2_crit(outputs[:,j,:,:], targets[:,j,:,:]).item()
+                    running_mae[j] += l1_crit(outputs[:,j,:,:],targets[:,j,:,:]).item()
 
-                running_ssim += ssim_criterion(outputs, targets).item()
+                    running_ssim[j] += ssim_criterion(outputs[:,j,:,:].unsqueeze(1), targets[:,j,:,:].unsqueeze(1)).item()
                                             
                                             
     mse = running_mse/len(data)
     mae = running_mae/len(data)
     ssim = running_ssim/len(data)
-    psnr = calculate_pnsr(mse, data[4])
+    psnr = np.zeros((args.dim,1))
+    for i in range(args.dim):
+        psnr[i] = calculate_pnsr(mse[i], data[4][i])
                                             
-    return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
+    return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':np.ones((args.dim,1))-ssim}
                                             
 
 def calculate_pnsr(mse, max_val):

@@ -10,20 +10,36 @@ def load_data(args):
     target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
     input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
     target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
-    mean = target_train.mean()
-    std = target_train.std()
-    max_val = target_train.max()
+    mean = torch.zeros((args.dim))
+    std = torch.zeros((args.dim))
+    max_val = torch.zeros((args.dim))
+    if len(input_train.shape)==3:
+        input_train = torch.unsqueeze(input_train, dim=1)
+        target_train = torch.unsqueeze(target_train, dim=1)
+        input_val = torch.unsqueeze(input_val, dim=1)
+        target_val = torch.unsqueeze(target_val, dim=1)
+    for i in range(args.dim):
+        mean[i] = target_train[:,i,:,:].mean()
+        std[i] = target_train[:,i,:,:].std()
+        max_val[i] = target_train[:,i,:,:].max()
     print(mean, std)
     if args.scale == 'standard':
-        input_train = (input_train - mean)/std
-        target_train = (target_train - mean)/std
-        input_val = (input_val - mean)/std
-        target_val = (target_val - mean)/std
+        for i in range(args.dim):
+            input_train[:,i,:,:] = (input_train[:,i,:,:] - mean[i])/std[i]
+            target_train[:,i,:,:] = (target_train[:,i,:,:] - mean[i])/std[i]
+            input_val[:,i,:,:] = (input_val[:,i,:,:] - mean[i])/std[i]
+            target_val[:,i,:,:] = (target_val[:,i,:,:] - mean[i])/std[i]
     elif args.scale == 'minmax':
         input_train = input_train /max_val
         target_train = target_train /max_val
         input_val = input_val/max_val
         target_val = target_val/max_val
+    elif args.scale == 'log':
+        input_train = torch.log(input_train+1)
+        target_train = torch.log(target_train+1)
+        input_val = torch.log(input_val+1)
+        target_val = torch.log(target_val+1)
+        
     
         
     train_data = TensorDataset(input_train, target_train)
@@ -36,7 +52,10 @@ def load_model(args, discriminator=False):
     if discriminator:
         model = models.Discriminator()
     else:
-        model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
+        if args.noise:
+            model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
+        else:
+            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
     model.to(device)
     return model
 
@@ -61,11 +80,16 @@ def process_for_training(inputs, targets):
 
 def process_for_eval(inputs, targets, mean, std, max_val, args): 
     if args.scale == 'standard':
-        inputs = inputs*std+mean           
-        targets = targets*std+mean
+        for i in range(args.dim):
+            inputs[:,i,:,:] = inputs[:,i,:,:]*std[i]+mean[i]
+            targets[:,i,:,:] = targets[:,i,:,:]*std[i]+mean[i]
+          
     elif args.scale == 'minmax':
-        inputs = inputs*max_val          
-        targets = targets*max_val
+        inputs = inputs*max_val.to(device)          
+        targets = targets*max_val.to(device)
+    elif args.scale == 'log':
+        inputs = torch.exp(inputs)-1
+        targets = torch.exp(targets)-1
     return inputs, targets
 
 def is_gan(args):
