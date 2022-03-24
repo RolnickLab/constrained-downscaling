@@ -34,7 +34,7 @@ def run_training(args, data):
         running_discr_loss = 0
         running_adv_loss = 0
         with tqdm(data[0], unit="batch") as tepoch:       
-            for (inputs, targets) in tepoch:          
+            for (inputs,  targets) in tepoch:          
                 inputs, targets = process_for_training(inputs, targets)
                 if is_gan(args):
                     loss, discr_loss = gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, tepoch, args)
@@ -187,7 +187,7 @@ def evaluate_model(model, data, args):
     l1_crit = nn.L1Loss()
     
     with tqdm(data[1], unit="batch") as tepoch:       
-            for i,(inputs, targets) in enumerate(tepoch): 
+            for i,(inputs,  targets) in enumerate(tepoch): 
                 inputs, targets = process_for_training(inputs, targets)
                 if args.noise:
                     z = np.random.normal( size=[inputs.shape[0], 100])

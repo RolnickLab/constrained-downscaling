@@ -10,6 +10,8 @@ def load_data(args):
     target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
     input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
     target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
+    #mid_train = torch.load('./data/train/'+args.dataset+'/mid_train.pt')
+    #mid_val = torch.load('./data/val/'+args.dataset+'/mid_val.pt')
     mean = torch.zeros((args.dim))
     std = torch.zeros((args.dim))
     max_val = torch.zeros((args.dim))
@@ -18,6 +20,8 @@ def load_data(args):
         target_train = torch.unsqueeze(target_train, dim=1)
         input_val = torch.unsqueeze(input_val, dim=1)
         target_val = torch.unsqueeze(target_val, dim=1)
+        #mid_train = torch.unsqueeze(mid_train, dim=1)
+        #mid_val = torch.unsqueeze(mid_val, dim=1)
     for i in range(args.dim):
         mean[i] = target_train[:,i,:,:].mean()
         std[i] = target_train[:,i,:,:].std()
@@ -29,6 +33,8 @@ def load_data(args):
             target_train[:,i,:,:] = (target_train[:,i,:,:] - mean[i])/std[i]
             input_val[:,i,:,:] = (input_val[:,i,:,:] - mean[i])/std[i]
             target_val[:,i,:,:] = (target_val[:,i,:,:] - mean[i])/std[i]
+            #mid_train[:,i,:,:] = (mid_train[:,i,:,:] - mean[i])/std[i]
+            #mid_val[:,i,:,:] = (mid_val[:,i,:,:] - mean[i])/std[i]
     elif args.scale == 'minmax':
         input_train = input_train /max_val
         target_train = target_train /max_val
@@ -42,7 +48,7 @@ def load_data(args):
         
     
         
-    train_data = TensorDataset(input_train, target_train)
+    train_data = TensorDataset(input_train,  target_train)
     val_data = TensorDataset(input_val, target_val)
     train = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     val = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
@@ -54,6 +60,8 @@ def load_model(args, discriminator=False):
     else:
         if args.noise:
             model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
+        elif args.model == 'mr_constr':
+            model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
         else:
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
     model.to(device)
@@ -73,10 +81,10 @@ def get_criterion(args, discriminator=False):
 def process_for_training(inputs, targets): 
     inputs = inputs.to(device)            
     targets = targets.to(device)
-    
+   
     #inputs.unsqueeze_(1)
     #targets.unsqueeze_(1)
-    return inputs, targets
+    return inputs,  targets
 
 def process_for_eval(inputs, targets, mean, std, max_val, args): 
     if args.scale == 'standard':
