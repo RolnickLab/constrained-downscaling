@@ -28,7 +28,9 @@ def load_data(args):
         max_val[i] = target_train[:,i,:,:].max()
     print(mean, std)
     if args.scale == 'standard':
+        print(input_train.shape)
         for i in range(args.dim):
+            
             input_train[:,i,:,:] = (input_train[:,i,:,:] - mean[i])/std[i]
             target_train[:,i,:,:] = (target_train[:,i,:,:] - mean[i])/std[i]
             input_val[:,i,:,:] = (input_val[:,i,:,:] - mean[i])/std[i]
@@ -62,6 +64,8 @@ def load_model(args, discriminator=False):
             model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
         elif args.model == 'mr_constr':
             model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
+        elif args.model == 'conv_gru':
+            model = models.ConvGRUGeneratorDet()
         else:
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
     model.to(device)

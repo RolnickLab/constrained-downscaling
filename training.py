@@ -159,6 +159,22 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
     model.train()
     return loss
 
+Tensor = torch.cuda.FloatTensor
+
+def compute_gradient_penalty(D, real_samples, fake_samples):
+    """Calculates the gradient penalty loss for WGAN GP"""
+    # Random weight term for interpolation between real and fake samples
+    alpha = Tensor(np.random.random((real_samples.size(0), 1, 1, 1)))
+    # Get random interpolation between real and fake samples
+    interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
+    d_interpolates = D(interpolates)
+    fake = Variable(Tensor(real_samples.shape[0], 1).fill_(1.0), requires_grad=False)
+    # Get gradient w.r.t. interpolates
+    gradients = autograd.grad(outputs=d_interpolates, inputs=interpolates, grad_outputs=fake, create_graph=True, retain_graph=True, only_inputs=True)[0]
+    gradients = gradients.view(gradients.size(0), -1)
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+    return gradient_penalty
+
 
 def checkpoint(model, val_loss, best, args):
     if val_loss < best:
@@ -202,10 +218,14 @@ def evaluate_model(model, data, args):
                     torch.save(outputs, './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
                 for j in range(args.dim):
                     ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4][j], reduction='mean')
-                    running_mse[j] += l2_crit(outputs[:,j,:,:], targets[:,j,:,:]).item()
-                    running_mae[j] += l1_crit(outputs[:,j,:,:],targets[:,j,:,:]).item()
-
-                    running_ssim[j] += ssim_criterion(outputs[:,j,:,:].unsqueeze(1), targets[:,j,:,:].unsqueeze(1)).item()
+                    running_mse[j] += l2_crit(outputs[...,j,:,:], targets[...,j,:,:]).item()
+                    running_mae[j] += l1_crit(outputs[...,j,:,:],targets[...,j,:,:]).item()
+                    if args.time:
+                        for t in range(8):
+                            running_ssim[j] += ssim_criterion(outputs[:,t,j,:,:].unsqueeze(1), targets[:,t,j,:,:].unsqueeze(1)).item()
+                        running_ssim[j] *=1/8
+                    else:
+                        running_ssim[j] += ssim_criterion(outputs[:,j,:,:].unsqueeze(1), targets[:,j,:,:].unsqueeze(1)).item()
                                             
                                             
     mse = running_mse/len(data)

@@ -320,11 +320,11 @@ class Discriminator(nn.Module):
     
 ####time-series model
 ###work in progress
+### data shape (batch_size, time_steps=8, channels=1, H, W)
 
-'''
 
 class TimeDistributed(nn.Module):
-    def __init__(self, module, batch_first=False):
+    def __init__(self, module, batch_first=True):
         super(TimeDistributed, self).__init__()
         self.module = module
         self.batch_first = batch_first
@@ -333,21 +333,38 @@ class TimeDistributed(nn.Module):
         if len(x.size()) <= 2:
             return self.module(x)
         # Squash samples and timesteps into a single axis
-        x_reshape = x.contiguous().view(-1, x.size(-1))  # (samples * timesteps, input_size)
+        shape = x.shape
+        x_reshape = x.reshape(shape[0]*shape[1], shape[2],shape[3], shape[4])  # (samples * timesteps, input_size)
         y = self.module(x_reshape)
         # We have to reshape Y
-        if self.batch_first:
-            y = y.contiguous().view(x.size(0), -1, y.size(-1))  # (samples, timesteps, output_size)
-        else:
-            y = y.view(-1, x.size(1), y.size(-1))  # (timesteps, samples, output_size)
+        y = y.reshape(shape[0],shape[1],y.shape[1],y.shape[2],y.shape[3])
         return y
 
-class CustomGateGRU(nn.Module):
-    def __init__(self, update_gate=None, reset_gate=None, output_gate=None, return_sequences=False, time_steps=1):
-        super(CustomGateGRU).__init__()
-        self.update_gate = update_gate
-        self.reset_gate = reset_gate
-        self.output_gate = output_gate
+
+class GenGate(nn.Module):
+    def __init__(self, activation='sigmoid', number_of_inchannels=64, number_of_outchannels=64):
+        super(GenGate, self).__init__()
+        self.refl = nn.ReflectionPad2d(1)
+        self.conv = nn.Conv2d(number_of_inchannels, number_of_outchannels, kernel_size=(3,3))
+        if activation is not None:
+            self.act = nn.Sigmoid()
+        else:
+            self.act = None
+               
+    def forward(self, x):
+        x = self.refl(x)
+        x = self.conv(x)
+        if self.act is not None:
+            x = self.act(x)
+        return x
+            
+            
+class GenGateGRU(nn.Module):
+    def __init__(self, return_sequences=True, time_steps=8):
+        super(GenGateGRU, self).__init__()
+        self.update_gate = GenGate('sigmoid', 128,64)
+        self.reset_gate = GenGate('sigmoid', 128,64)
+        self.output_gate = GenGate(None, 128,64)
         self.return_sequences = return_sequences
         self.time_steps = time_steps
 
@@ -356,61 +373,16 @@ class CustomGateGRU(nn.Module):
         h_all = []
         for t in range(self.time_steps):
             x = xt[:,t,...]
-            xh = torch.cat((x,h), dim=-1)
+            xh = torch.cat((x,h), dim=1)
             z = self.update_gate(xh)
             r = self.reset_gate(xh)
-            o = self.output_gate(torch.cat((x,r*h), dim=-1))
+            o = self.output_gate(torch.cat((x,r*h), dim=1))
             h = z*h + (1-z)*torch.tanh(o)
             if self.return_sequences:
                 h_all.append(h)
         return torch.stack(h_all,dim=1) if self.return_sequences else h
-                
-def gen_gate(activation='sigmoid'):
-    def gate(x):
-        x = nn.ReflectionPad2d(padding=(1,1))(x)
-        x = nn.Connv2d(256-8, kernel_size=(3,3))(x)
-        if activation is not None:
-            x = nn.Sigmoid(x)
-        return x
-    return Lambda(gate)
-                
 
-class ConvGRUGenerator(nn.Module):    
-    def __init__(self, number_channels=256, number_residual_blocks=3, upsampling_factor=2):
-    super(ConvGRUGenerator, self).__init__()  
-        self.reflpadd1 = nn.ReflectionPad2d(padding=(1,1))
-        self.conv1 = nn.Connv2d(number_channels-8, kernel_size=(3,3))
-        self.res_blocks = nn.ModuleList()
-        for k in range(number_residual_blocks):
-            self.res_blocks.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='relu'))
-        self.convgru = CustomGateGRU(update_gate=gen_gate(), reset_gate=gen_gate(), output_gate=gen_gate(activation=None), return_sequences=True, time_steps=8)  
-        self.upsampling = nn.ModuleList()
-        block_channels = [256, 256, 128]
-        for (i,channels) in enumerate(block_channels):
-            if i > 0:
-                self.upsampling.append(TimeDistributed(nn.UpsamplingBilinear2d(scale_factor=2)))
-            self.upsampling.append(ResidualBlockRNN(channels, channels, stride=1, activation='leaky_relu'))
-            
-        self.reflpadd2 = nn.ReflectionPad2d(padding=(1,1))
-        self.conv2 = nn.Connv2d(number_channels, kernel_size=(3,3)) 
-    
-    def forward(self, low_res, initial_state, noise):
-    
-        xt = TimeDistributed(self.reflpadd1)(low_res)
-        xt = TimeDistributed(self.conv1)(xt)
-        xt = torch.cat((xt, noise))
-        for layer in self.res_blocks:
-            xt = layer(xt)
-        x = self.convgru([xt, initial_state])
-        h = x[:,-1,...]
-        for layer in self.upsampling:
-            x = layer(x)
-            
-        x = TimeDistributed(self.reflpadd2)(x)
-        img_out = TimeDistributed(self.conv2)(x)
-        
-        return [img_out, h]
-        
+                
 
 class ResidualBlockRNN(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, activation='leaky_relu'):
@@ -420,7 +392,7 @@ class ResidualBlockRNN(nn.Module):
             self.relu1 = nn.ReLU(inplace=True)
         elif activation == 'leaky_relu':
             self.relu1 = nn.LeakyReLU(inplace=True)
-        self.conv2 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False, padding_mode='reflect')
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False, padding_mode='reflect')
         if activation == 'relu':
             self.relu2 = nn.ReLU(inplace=True)
         elif activation == 'leaky_relu':
@@ -428,7 +400,7 @@ class ResidualBlockRNN(nn.Module):
         
     def forward(self, x):
         residual = x
-        out = self.relu1(out)
+        out = self.relu1(x)
         out = TimeDistributed(self.conv1)(x)
         out = self.relu2(out)
         out = TimeDistributed(self.conv2)(out)
@@ -482,10 +454,10 @@ class ResidualBlockN(nn.Module):
         return out
         
 class InitialState(nn.Module):
-    def __init__(self, number_channels=256):
+    def __init__(self, number_channels=256, number_residual_blocks=3):
         super(InitialState, self).__init__()
-        self.reflpadd = nn.ReflectionPad2d(padding=(1,1))
-        self.conv = nn.Connv2d(number_channels-8, kernel_size=(3,3))
+        self.reflpadd = nn.ReflectionPad2d(1)
+        self.conv = nn.Conv2d(1, number_channels-8, kernel_size=(3,3))
         self.res_blocks = nn.ModuleList()
         for k in range(number_residual_blocks):
             self.res_blocks.append(ResidualBlockN(number_channels, number_channels, stride=1, activation='relu'))
@@ -497,17 +469,30 @@ class InitialState(nn.Module):
         for layer in self.res_blocks:
             out = layer(out)
         return out
+    
+class InitialStateDet(nn.Module):
+    def __init__(self, number_channels=64,  number_residual_blocks=3):
+        super(InitialStateDet, self).__init__()
+        self.reflpadd = nn.ReflectionPad2d(1)
+        self.conv = nn.Conv2d(1, number_channels,kernel_size=(3,3), padding=1)
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlockN(number_channels, number_channels, stride=1, activation='relu'))
         
- 
-
+    def forward(self, x):
+        #out = self.reflpadd(x)
+        out = self.conv(x)
+        for layer in self.res_blocks:
+            out = layer(out)
+        return out
+        
 class DicriminatorRNN(nn.Module):
     def __init__(self, number_channels=256, number_residual_blocks=3):
         super(Discriminator, self).__init__()
         block_channels = [128, 256]
         self.downsampling_hr = nn.ModuleList()
         self.downsampling_lr = nn.ModuleList()
-        for (i,channels) in enumerate(block_channels):
-            
+        for (i,channels) in enumerate(block_channels):        
             self.downsampling_hr.append(ResidualBlockRNNSpectral(channels, channels, stride=2, activation='leaky_relu'))
             self.downsampling_lr.append(ResidualBlockRNNSpectral(channels, channels, stride=1, activation='leaky_relu'))
         self.res_blocks = nn.ModuleList()
@@ -516,8 +501,12 @@ class DicriminatorRNN(nn.Module):
         self.res_blocks_hr = nn.ModuleList()
         for k in range(number_residual_blocks):
             self.res_blocks_hr.append(ResidualBlockRNNSpectral(number_channels, number_channels, stride=1, activation='leaky_relu'))
-        self.conv_gru_lr = CustomGateGRU(update_gate=disc_gate(), reset_gate=disc_gate(), output_gate=disc_gate(activation=None), return_sequences=True, time_steps=8)
-        self.conv_gru_hr = CustomGateGRU(update_gate=disc_gate(), reset_gate=disc_gate(), output_gate=disc_gate(activation=None), return_sequences=True, time_steps=8)
+        self.conv_gru_lr = CustomGateGRU(update_gate=DiscGate(), reset_gate=DiscGate(), output_gate=DiscGate(activation=None), return_sequences=True, time_steps=8)
+        self.conv_gru_hr = CustomGateGRU(update_gate=DiscGate(), reset_gate=DiscGate(), output_gate=DiscGate(activation=None), return_sequences=True, time_steps=8)
+        avg_joint = TimeDistributed(nn.AveragePooling2D(kernel_size=(32,32)))
+        avg_hr = TimeDistributed(nn.AveragePooling2D(kernel_size=(32,32)))
+        sn_dense = TimeDistributed(nn.utils.spectral_norm(nn.Linear(512,256)))
+        sn_dense_one = TimeDistributed(nn.utils.spectral_norm(nn.Linear(256,1) ))
         
     def forward(self, lr, hr):
         for layer in self.downsampling_hr:
@@ -529,79 +518,104 @@ class DicriminatorRNN(nn.Module):
             joint = layer(joint)
         for layer in self.res_blocks_hr:
             hr = layer(hr)
-        joint = self.conv_gru_joint(joint)
-        hr = self.conv_gru_hr(hr)
-        
+        joint = self.conv_gru_joint([joint, torch.zeros_like(joint[:,0,...])])
+        hr = self.conv_gru_hr([hr, torch.zeros_like(joint[:,0,...])])
+        joint = avg_joint(joint)
+        hr = avg_hr(hr)
+        out = torch.cat((joint, hr))
+        out = sn_dense(out)
+        out = nn.LeakyReLU(out)
+        out = sn_dense_one(out)
+        return out     
             
-            
-def disc_gate(activation='sigmoid'):
-    def gate(x):
-        x = nn.ReflectionPad2d(padding=(1,1))(x)
-        x = nn.utils.spectral_norm(nn.Connv2d(256, kernel_size=(3,3)))(x)
+
+class DiscGate(nn.Module):
+    def __init__(self, activation='sigmoid'):
+        super(DiscGate, self).__init__()
+        self.refl = nn.ReflectionPad2d(1)
+        self.conv = nn.utils.spectral_norm(nn.Conv2d(256, kernel_size=(3,3)))
         if activation is not None:
-            x = nn.Sigmoid(x)
-        return x
-    return Lambda(gate)
+            self.act = nn.Sigmoid()
+        else:
+            self.act = None
+               
+    def forward(self, x):
+        x = self.refl(x)
+        x = self.conv(x)
+        if self.act is not None:
+            x = self.act(x)
 
-
-def discriminator(num_channels=1, num_timesteps=8):
-    hires_in = Input(shape=(num_timesteps,None,None,num_channels), name="sample_in")
-    lores_in = Input(shape=(num_timesteps,None,None,num_channels), name="cond_in")
-    x_hr = hires_in
-    x_lr = lores_in
-    block_channels = [32, 64, 128, 256]
-    for (i,channels) in enumerate(block_channels):
-        x_hr = res_block(channels, time_dist=True,
-            norm="spectral", stride=2)(x_hr)
-        x_lr = res_block(channels, time_dist=True,
-            norm="spectral")(x_lr)
-    x_joint = Concatenate()([x_lr,x_hr])
     
-    x_joint = res_block(256, time_dist=True, norm="spectral")(x_joint)
-    x_joint = res_block(256, time_dist=True, norm="spectral")(x_joint)
+class ConvGRUGenerator(nn.Module):    
+    def __init__(self, number_channels=256, number_residual_blocks=3, upsampling_factor=2):
+        super(ConvGRUGenerator, self).__init__()  
+        self.initialize = InitialState()
+        self.reflpadd1 = nn.ReflectionPad2d(1)
+        self.conv1 = nn.Conv2d(1, number_channels-8, kernel_size=(3,3))
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='relu'))
+        self.convgru = GenGateGRU(update_gate=GenGate(), reset_gate=GenGate(), output_gate=GenGate(activation=None), return_sequences=True, time_steps=8)  
+        self.upsampling = nn.ModuleList()
+        block_channels = [256, 256, 128]
+        for (i,channels) in enumerate(block_channels):
+            if i > 0:
+                self.upsampling.append(TimeDistributed(nn.UpsamplingBilinear2d(scale_factor=2)))
+            self.upsampling.append(ResidualBlockRNN(channels, channels, stride=1, activation='leaky_relu'))          
+        self.reflpadd2 = nn.ReflectionPad2d(1)
+        self.conv2 = nn.Conv2d(number_channels, 1, kernel_size=(3,3)) 
+    
+    def forward(self, low_res, noise, initial_state_noise):   
+        initial_state = self.initialize(low_reslow_res[:,0,...], initial_state_noise)
+        xt = TimeDistributed(self.reflpadd1)(low_res)
+        xt = TimeDistributed(self.conv1)(xt)
+        xt = torch.cat((xt, noise))
+        for layer in self.res_blocks:
+            xt = layer(xt)
+        x = self.convgru([xt, initial_state])
+        h = x[:,-1,...]
+        for layer in self.upsampling:
+            x = layer(x)           
+        x = TimeDistributed(self.reflpadd2)(x)
+        img_out = TimeDistributed(self.conv2)(x)       
+        return [img_out, h]
+    
+class ConvGRUGeneratorDet(nn.Module):    
+    def __init__(self, number_channels=64, number_residual_blocks=3, upsampling_factor=2):
+        super(ConvGRUGeneratorDet, self).__init__()  
+        self.initialize = InitialStateDet()
+        self.reflpadd1 = TimeDistributed(nn.ReflectionPad2d(1))
+        self.conv1 = TimeDistributed(nn.Conv2d(1, number_channels, kernel_size=(3,3), padding=1))
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='relu'))
+        self.convgru = GenGateGRU(return_sequences=True, time_steps=8)  
+        self.upsampling = nn.ModuleList()
+        for i in range(3):
+            if i > 0:
+                self.upsampling.append(TimeDistributed(nn.UpsamplingBilinear2d(scale_factor=2)))
+            self.upsampling.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='leaky_relu'))          
+        self.reflpadd2 = TimeDistributed(nn.ReflectionPad2d(1))
+        self.conv2 = TimeDistributed(nn.Conv2d(number_channels, 1, kernel_size=(3,3), padding=1))
+    
+    def forward(self, low_res):   
+        initial_state = self.initialize(low_res[:,0,...])
+        #xt = self.reflpadd1(low_res)
+        
+        xt = self.conv1(low_res)
+        for layer in self.res_blocks:
+            xt = layer(xt)
+        x = self.convgru([xt, initial_state])
+        h = x[:,-1,...]
+        for layer in self.upsampling:
+            x = layer(x)           
+        #x = self.reflpadd2(x)
+        img_out = self.conv2(x)   
+        return img_out
 
-    x_hr = res_block(256, time_dist=True, norm="spectral")(x_hr)
-    x_hr = res_block(256, time_dist=True, norm="spectral")(x_hr)    
 
-    def disc_gate(activation='sigmoid'):
-        def gate(x):
-            x = ReflectionPadding2D(padding=(1,1))(x)
-            x = SNConv2D(256, kernel_size=(3,3),
-                kernel_initializer='he_uniform')(x)
-            if activation is not None:
-                x = Activation(activation)(x)
-            return x
-        return Lambda(gate)
 
-    h = Lambda(lambda x: tf.zeros_like(x[:,0,...]))
-    x_joint = CustomGateGRU(
-        update_gate=disc_gate(),
-        reset_gate=disc_gate(),
-        output_gate=disc_gate(activation=None),
-        return_sequences=True,
-        time_steps=num_timesteps
-    )([x_joint,h(x_joint)])
-    x_hr = CustomGateGRU(
-        update_gate=disc_gate(),
-        reset_gate=disc_gate(),
-        output_gate=disc_gate(activation=None),
-        return_sequences=True,
-        time_steps=num_timesteps
-    )([x_hr,h(x_hr)])
 
-    x_avg_joint = TimeDistributed(GlobalAveragePooling2D())(x_joint)
-    x_avg_hr = TimeDistributed(GlobalAveragePooling2D())(x_hr)
-
-    x = Concatenate()([x_avg_joint,x_avg_hr])
-    x = TimeDistributed(SNDense(256))(x)
-    x = LeakyReLU(0.2)(x)
-
-    disc_out = TimeDistributed(SNDense(1))(x)
-
-    disc = Model(inputs=[lores_in, hires_in], outputs=disc_out,
-        name='disc')
-
-    return disc
 
 
 
