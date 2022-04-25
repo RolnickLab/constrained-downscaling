@@ -9,13 +9,15 @@ import csv
 
 def add_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='dataset0', help="choose a data set to use")
-    parser.add_argument("--model", default='bilinear')
-    parser.add_argument("--model_id", default='bilinear')
+    parser.add_argument("--dataset", default='dataset11', help="choose a data set to use")
+    parser.add_argument("--model", default='any')
+    parser.add_argument("--model_id", default='bicubic_time')
+    parser.add_argument("--time", default=True)
+    parser.add_argument("--nn", default=True)
     return parser.parse_args()
 
 def main(args):
-
+    #n = 24
     input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
     target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
     val_data = TensorDataset(input_val, target_val)
@@ -26,21 +28,51 @@ def main(args):
     l2_crit = nn.MSELoss()
     l1_crit = nn.L1Loss()
     ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=torch.max(target_val) , reduction='mean')
+    if args.nn:
+        pred = torch.load('./data/prediction/'+args.model_id+'_fullprediction.pt')
+        pred = pred.detach().cpu().numpy()
+        print(pred.shape)
     for i,(lr, hr) in enumerate(val_data):
         im = lr.numpy()
-        if args.model == 'bilinear':
-            pred[i,:,:] = np.array(Image.fromarray(im).resize((4*lr.shape[1],4*lr.shape[1]), Image.BILINEAR))
-        elif args.model == 'bicubic':
-            pred[i,:,:] = np.array(Image.fromarray(im).resize((4*lr.shape[1],4*lr.shape[1]), Image.BICUBIC))
+        if args.time:
+            for j in range(8):
+                if args.model == 'bilinear':
+                    pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BILINEAR))
+                elif args.model == 'bicubic':
+                    pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BICUBIC))
+                elif args.model == 'kronecker':
+                    pred[i,j,0,:,:] = np.kron(im[j,0,...], np.ones((4,4)))
+                
+
+                mse += l2_crit(torch.Tensor(pred[i,j,0,:,:]), hr[j,0,...]).item()
+                mae += l1_crit(torch.Tensor(pred[i,j,0,:,:]), hr[j,0,...]).item()
+                ssim += ssim_criterion(torch.Tensor(pred[i,j,...]).unsqueeze(0), hr[j,...].unsqueeze(0)).item()
+        elif args.model=='frame_inter':
+            pred[i,... ] = 0.5*(im[0,...]+im[1,...])
+            mse += l2_crit(torch.Tensor(pred[i,:,:]), hr).item()
+            mae += l1_crit(torch.Tensor(pred[i,:,:]), hr).item()
+            ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0), hr.unsqueeze(0)).item()
+        else:
+            if args.model == 'bilinear':
+                pred[i,:,:] = np.array(Image.fromarray(im).resize((4*lr.shape[1],4*lr.shape[1]), Image.BILINEAR))
+            elif args.model == 'bicubic':
+                pred[i,:,:] = np.array(Image.fromarray(im).resize((4*lr.shape[1],4*lr.shape[1]), Image.BICUBIC))
+        #elif args.model == 'kronecker':
             
-        mse += l2_crit(torch.Tensor(pred[i,:,:]), hr).item()
-        mae += l1_crit(torch.Tensor(pred[i,:,:]), hr).item()
-        ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0).unsqueeze(0), hr.unsqueeze(0).unsqueeze(0)).item()
+            mse += l2_crit(torch.Tensor(pred[i,:,:]), hr).item()
+            mae += l1_crit(torch.Tensor(pred[i,:,:]), hr).item()
+            ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0), hr.unsqueeze(0)).item()
+            
     
     torch.save(torch.Tensor(pred[:128,:,:]).unsqueeze(1), './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
-    mse *= 1/input_val.shape[0]   
-    mae *= 1/input_val.shape[0] 
-    ssim *= 1/input_val.shape[0] 
+    if args.time:
+        mse *= 1/(8*n)#1/(input_val.shape[0]*8)
+        mae *= 1/(8*n)#1/(input_val.shape[0] *8)
+        ssim *= 1/(8*n)#1/(input_val.shape[0] *8)
+    else:
+        mse *= 1/input_val.shape[0]   
+        mae *= 1/input_val.shape[0] 
+        ssim *= 1/input_val.shape[0] 
     psnr = calculate_pnsr(mse, torch.max(target_val)   )     
     scores = {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
     print(scores)

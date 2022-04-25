@@ -9,12 +9,12 @@ import csv
 import numpy as np
 device = 'cuda'
 #torch.set_default_dtype(torch.float64)
+
 def run_training(args, data):
     model = load_model(args)
     optimizer = get_optimizer(args, model)
     criterion = get_criterion(args)
-    if is_gan(args):
-        
+    if is_gan(args):   
         discriminator_model = load_model(args, discriminator=True)
         optimizer_discr = get_optimizer(args, discriminator_model)
         criterion_discr = get_criterion(args, discriminator=True)
@@ -68,15 +68,15 @@ def run_training(args, data):
     scores = evaluate_model(model, data, args)
     print(scores)
     create_report(scores, args)
-    if is_gan(args):
-        np.save(np.array(disc_loss), './data/losses/'+args.model_id+'-'+'disc_loss.npy')
-        np.save(np.array(train_loss_reg), './data/losses/'+args.model_id+'-'+'train_loss_reg.npy')
-        np.save(np.array(train_loss_adv), './data/losses/'+args.model_id+'-'+'train_loss_adv.npy')
-        np.save(np.array(val_loss_reg), './data/losses/'+args.model_id+'-'+'val_loss_reg.npy')
-        np.save(np.array(val_loss_adv), './data/losses/'+args.model_id+'-'+'val_loss_adv.npy')
-    else:
-        np.save(np.array(train_loss), './data/losses/'+args.model_id+'-'+'train_loss.npy')
-        np.save(np.array(val_losses), './data/losses/'+args.model_id+'-'+'val_loss.npy')
+    #if is_gan(args):
+        #np.save(np.array(disc_loss), './data/losses/'+args.model_id+'-'+'disc_loss.npy')
+        #np.save(np.array(train_loss_reg), './data/losses/'+args.model_id+'-'+'train_loss_reg.npy')
+        #np.save(np.array(train_loss_adv), './data/losses/'+args.model_id+'-'+'train_loss_adv.npy')
+        #np.save(np.array(val_loss_reg), './data/losses/'+args.model_id+'-'+'val_loss_reg.npy')
+        #np.save(np.array(val_loss_adv), './data/losses/'+args.model_id+'-'+'val_loss_adv.npy')
+    #else:
+        #np.save(np.array(train_loss), './data/losses/'+args.model_id+'-'+'train_loss.npy')
+        #np.save(np.array(val_losses), './data/losses/'+args.model_id+'-'+'val_loss.npy')
         
     
 
@@ -93,20 +93,36 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, d
 def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, tepoch, args):
     optimizer_discr.zero_grad()
     if args.noise:
-        z = np.random.normal( size=[inputs.shape[0], 100])
-        z = torch.Tensor(z).to(device)
+        if args.time:
+            z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+            z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
+            z = torch.Tensor(z).to(device)
+            z_init = torch.Tensor(z_init).to(device)
+            outputs = model(inputs, z, z_init)
+        else:
+            z = np.random.normal( size=[inputs.shape[0], 100])
+            z = torch.Tensor(z).to(device)
 
-        outputs = model(inputs, z)
+            outputs = model(inputs, z)
     else:
         outputs = model(inputs)
     batch_size = inputs.shape[0]
-    real_label = torch.full((batch_size, 1), 1, dtype=outputs.dtype).to(device)
-    fake_label = torch.full((batch_size, 1), 0, dtype=outputs.dtype).to(device)
+    if args.time:
+        real_label = torch.full((batch_size, args.nsteps_in, 1), 1, dtype=outputs.dtype).to(device)
+        fake_label = torch.full((batch_size, args.nsteps_in, 1), 0, dtype=outputs.dtype).to(device)
+    else:
+        real_label = torch.full((batch_size, 1), 1, dtype=outputs.dtype).to(device)
+        fake_label = torch.full((batch_size, 1), 0, dtype=outputs.dtype).to(device)
 
     # It makes the discriminator distinguish between real sample and fake sample.
-    real_output = discriminator_model(targets)
-    fake_output = discriminator_model(outputs.detach())
-    # Adversarial loss for real and fake images                   
+    if args.time:
+        real_output = discriminator_model(targets, inputs)
+        fake_output = discriminator_model(outputs.detach(), inputs)
+    else:
+        real_output = discriminator_model(targets)
+        fake_output = discriminator_model(outputs.detach())
+    # Adversarial loss for real and fake images  
+
     d_loss_real = criterion_discr(real_output, real_label)                    
     d_loss_fake = criterion_discr(fake_output, fake_label)
     # Count all discriminator losses.
@@ -119,7 +135,10 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
     reg_loss = criterion(outputs, targets)
     loss = args.reg_factor*reg_loss
     # Adversarial loss for real and fake images (relativistic average GAN)
-    adversarial_loss = criterion_discr(discriminator_model(outputs), real_label)
+    if args.time:
+        adversarial_loss = criterion_discr(discriminator_model(outputs, inputs), real_label)
+    else:
+        adversarial_loss = criterion_discr(discriminator_model(outputs), real_label)
     loss += args.adv_factor * adversarial_loss
     loss.backward()
     optimizer.step()       
@@ -136,17 +155,28 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
             inputs, targets = process_for_training(inputs, targets)
             if is_gan(args):
                 if args.noise:
-                    z = np.random.normal( size=[inputs.shape[0], 100])
-                    z = torch.Tensor(z).to(device)
+                    if args.time:
+                        z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+                        z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
+                        z = torch.Tensor(z).to(device)
+                        z_init = torch.Tensor(z_init).to(device)
+                        outputs = model(inputs, z, z_init)
+                    else:
+                        z = np.random.normal( size=[inputs.shape[0], 100])
+                        z = torch.Tensor(z).to(device)
 
-                    outputs = model(inputs, z)
+                        outputs = model(inputs, z)
                 else:
                     outputs = model(inputs)
                 reg_loss = criterion(outputs, targets)
                 loss = args.reg_factor*reg_loss
                 batch_size = inputs.shape[0]
-                real_label = torch.full((batch_size, 1), 1, dtype=outputs.dtype).to(device)
-                fake_output = discriminator_model(outputs.detach()) 
+                if args.time:
+                    real_label = torch.full((batch_size, args.nsteps_out, 1), 1, dtype=outputs.dtype).to(device)
+                    fake_output = discriminator_model(outputs.detach(), inputs)
+                else:
+                    real_label = torch.full((batch_size, 1), 1, dtype=outputs.dtype).to(device)
+                    fake_output = discriminator_model(outputs.detach())
                 adversarial_loss = criterion_discr(fake_output.detach(), real_label)
                 loss += args.adv_factor * adversarial_loss
             else:
@@ -192,8 +222,6 @@ def check_for_early_stopping(val_loss, best, patience_counter, args):
         is_stop = True 
     return is_stop, patience_counter
 
-
-
 def evaluate_model(model, data, args):
     model.eval()
     running_mse = np.zeros((args.dim,1))    
@@ -201,29 +229,101 @@ def evaluate_model(model, data, args):
     running_mae = np.zeros((args.dim,1)) 
     l2_crit = nn.MSELoss()
     l1_crit = nn.L1Loss()
-    
+    data_it = iter(data[1])
+    first = data_it.next()
+    shape = first[1].shape
+    full_pred = torch.zeros((args.data_size, shape[1], shape[2], shape[3], shape[4]))
+    print(first[1].shape, first[0].shape, len(data_it))
     with tqdm(data[1], unit="batch") as tepoch:       
             for i,(inputs,  targets) in enumerate(tepoch): 
                 inputs, targets = process_for_training(inputs, targets)
                 if args.noise:
-                    z = np.random.normal( size=[inputs.shape[0], 100])
-                    z = torch.Tensor(z).to(device)
+                    if args.time:
+                        z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+                        z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
+                        z = torch.Tensor(z).to(device)
+                        z_init = torch.Tensor(z_init).to(device)
+                        outputs = model(inputs, z, z_init)
+                    else:
+                        z = np.random.normal( size=[inputs.shape[0], 100])
+                        z = torch.Tensor(z).to(device)
 
-                    outputs = model(inputs, z)
+                        outputs = model(inputs, z)
                 else:
                     outputs = model(inputs)
+                    
                 outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
-                print(outputs.shape, targets.shape)
+                print(full_pred.shape, outputs.shape)
+                full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
                 if i == 0:
                     torch.save(outputs, './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
-                for j in range(args.dim):
+                    
+                for j in range(args.dim_out):
                     ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4][j], reduction='mean')
                     running_mse[j] += l2_crit(outputs[...,j,:,:], targets[...,j,:,:]).item()
                     running_mae[j] += l1_crit(outputs[...,j,:,:],targets[...,j,:,:]).item()
                     if args.time:
-                        for t in range(8):
+                        for t in range(args.nsteps_out):
                             running_ssim[j] += ssim_criterion(outputs[:,t,j,:,:].unsqueeze(1), targets[:,t,j,:,:].unsqueeze(1)).item()
-                        running_ssim[j] *=1/8
+                        running_ssim[j] *=1/args.nsteps_out
+                    else:
+                        running_ssim[j] += ssim_criterion(outputs[:,j,:,:].unsqueeze(1), targets[:,j,:,:].unsqueeze(1)).item()
+                                            
+                                            
+    mse = running_mse/len(data)
+    mae = running_mae/len(data)
+    ssim = running_ssim/len(data)
+    psnr = np.zeros((args.dim,1))
+    for i in range(args.dim):
+        psnr[i] = calculate_pnsr(mse[i], data[4][0])
+    torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_fullprediction.pt')                                      
+    return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':np.ones((args.dim,1))-ssim}
+
+
+def evaluate_double_model(model1, model2, data, args):
+    model1.eval()
+    model2.eval()
+    running_mse = np.zeros((args.dim,1))    
+    running_ssim = np.zeros((args.dim,1))
+    running_mae = np.zeros((args.dim,1)) 
+    l2_crit = nn.MSELoss()
+    l1_crit = nn.L1Loss()
+    full_pred = torch.zeros((2035, 3 ,1 , 128, 128))
+    with tqdm(data[1], unit="batch") as tepoch:       
+            for i,(inputs,  targets) in enumerate(tepoch): 
+                inputs, targets = process_for_training(inputs, targets)
+                if args.noise:
+                    if args.time:
+                        z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+                        z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
+                        z = torch.Tensor(z).to(device)
+                        z_init = torch.Tensor(z_init).to(device)
+                        outputs = model(inputs, z, z_init)
+                    else:
+                        z = np.random.normal( size=[inputs.shape[0], 100])
+                        z = torch.Tensor(z).to(device)
+
+                        outputs = model2(model1(inputs, z))
+                else:
+                    out = model1(inputs)
+                    x = torch.cat((inputs[:,0:1,:,:], out, inputs[:,1:2,:,:]), dim=1)
+                    if i ==0:
+                        torch.save(x, './data/prediction/intermediate.pt')
+                    x = x.unsqueeze(2)
+                    outputs = model2(x)
+                outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
+                full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
+                if i == 0:
+                    torch.save(outputs, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+'_prediction.pt')
+                for j in range(args.dim):
+                    print(outputs.shape)
+                    ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4][j], reduction='mean')
+                    running_mse[j] += l2_crit(outputs[...,j,:,:], targets[...,j,:,:]).item()
+                    running_mae[j] += l1_crit(outputs[...,j,:,:],targets[...,j,:,:]).item()
+                    if args.time:
+                        for t in range(args.nsteps_in):
+                            running_ssim[j] += ssim_criterion(outputs[:,t,j,:,:].unsqueeze(1), targets[:,t,j,:,:].unsqueeze(1)).item()
+                        running_ssim[j] *=1/args.nsteps_in
                     else:
                         running_ssim[j] += ssim_criterion(outputs[:,j,:,:].unsqueeze(1), targets[:,j,:,:].unsqueeze(1)).item()
                                             
@@ -234,26 +334,36 @@ def evaluate_model(model, data, args):
     psnr = np.zeros((args.dim,1))
     for i in range(args.dim):
         psnr[i] = calculate_pnsr(mse[i], data[4][i])
-                                            
+    torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+'_fullprediction.pt')                                      
     return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':np.ones((args.dim,1))-ssim}
+    
+    
+
+
+
+    
                                             
 
 def calculate_pnsr(mse, max_val):
     return 20 * torch.log10(max_val / torch.sqrt(torch.Tensor([mse])))
                                             
-def create_report(scores, args):
+def create_report(scores, args, add_string=None):
     args_dict = args_to_dict(args)
     #combine scorees and args dict
     args_scores_dict = args_dict | scores
     #save dict
-    save_dict(args_scores_dict, args)
+    save_dict(args_scores_dict, args, add_string)
     
 def args_to_dict(args):
     return vars(args)
     
                                             
-def save_dict(dictionary, args):
-    w = csv.writer(open('./data/score_log/'+args.model_id+'.csv', 'w'))
+def save_dict(dictionary, args, add_string):
+    if add_string:
+        w = csv.writer(open('./data/score_log/'+args.model_id+add_string+'.csv', 'w'))
+    else:
+        w = csv.writer(open('./data/score_log/'+args.model_id+'.csv', 'w'))
+        
     # loop over dictionary keys and values
     for key, val in dictionary.items():
         # write every key and value to file
