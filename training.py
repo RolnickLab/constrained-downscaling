@@ -1,4 +1,5 @@
 from utils import process_for_training, is_gan, is_noisegan, load_model, get_optimizer, get_criterion, process_for_eval
+from utils import train_shape_in, train_shape_out, val_shape_in, val_shape_out
 import models
 import numpy as np
 from tqdm import tqdm
@@ -337,10 +338,6 @@ def evaluate_double_model(model1, model2, data, args):
     torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+'_fullprediction.pt')                                      
     return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':np.ones((args.dim,1))-ssim}
     
-    
-
-
-
     
                                             
 

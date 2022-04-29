@@ -10,35 +10,27 @@ def load_data(args):
     target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
     input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
     target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
-    #mid_train = torch.load('./data/train/'+args.dataset+'/mid_train.pt')
-    #mid_val = torch.load('./data/val/'+args.dataset+'/mid_val.pt')
-    mean = torch.zeros((args.dim_out)) #max of dims
-    std = torch.zeros((args.dim_out))
-    max_val = torch.zeros((args.dim_out))
-    if len(input_train.shape)==3:
-        input_train = torch.unsqueeze(input_train, dim=1)
-        target_train = torch.unsqueeze(target_train, dim=1)
-        input_val = torch.unsqueeze(input_val, dim=1)
-        target_val = torch.unsqueeze(target_val, dim=1)
-        #mid_train = torch.unsqueeze(mid_train, dim=1)
-        #mid_val = torch.unsqueeze(mid_val, dim=1)
-    '''
-    elif len(input_train.shape)==3 and args.time:
-        input_train = torch.unsqueeze(input_train, dim=1)
-        target_train = torch.unsqueeze(target_train, dim=1)
-        input_val = torch.unsqueeze(input_val, dim=1)
-        target_val = torch.unsqueeze(target_val, dim=1)'''
-    for i in range(args.dim_out):
-        mean[i] = 19#target_train[:,i,:,:].mean()
-        std[i] = 16#target_train[:,i,:,:].std()
-        max_val[i] = target_train[:,0,:,:].max()
-    print(mean, std)
-    if args.scale == 'standard':
-           
-        input_train = (input_train - mean[0])/std[0]
-        input_val = (input_val - mean[0])/std[0]
-        target_train = (target_train - mean[0])/std[0]
-        target_val = (target_val - mean[0])/std[0]
+    #define dimesions
+    global train_shape_in , train_shape_out, val_shape_in, val_shape_in
+    train_shape_in = input_train.shape
+    train_shape_out = target_train.shape
+    val_shape_in = input_val.shape
+    val_shape_out = target_val.shape
+    #mean, std, max
+    mean = target_train.mean()
+    std = target_train.std()
+    max_val = target_train.max()
+    #transform data
+    if args.scale == 'standard':          
+        input_train = (input_train - mean)/std
+        input_val = (input_val - mean)/std
+        target_train = (target_train - mean)/std
+        target_val = (target_val - mean)/std
+    elif args.scale == 'standard_fixed':
+        input_train = (input_train - args.mean)/args.std
+        input_val = (input_val - args.mean)/args.std
+        target_train = (target_train - args.mean)/args.std
+        target_val = (target_val - args.mean)/args.std  
     elif args.scale == 'minmax':
         input_train = input_train /max_val
         target_train = target_train /max_val
@@ -48,10 +40,7 @@ def load_data(args):
         input_train = torch.log(input_train+1)
         target_train = torch.log(target_train+1)
         input_val = torch.log(input_val+1)
-        target_val = torch.log(target_val+1)
-        
-    
-        
+        target_val = torch.log(target_val+1)       
     train_data = TensorDataset(input_train,  target_train)
     val_data = TensorDataset(input_val, target_val)
     train = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
@@ -101,20 +90,18 @@ def get_criterion(args, discriminator=False):
 def process_for_training(inputs, targets): 
     inputs = inputs.to(device)            
     targets = targets.to(device)
-   
-    #inputs.unsqueeze_(1)
-    #targets.unsqueeze_(1)
     return inputs,  targets
 
 def process_for_eval(outputs, targets, mean, std, max_val, args): 
     if args.scale == 'standard':
-        for i in range(args.dim_out):
-            outputs[:,i,:,:] = outputs[:,i,:,:]*std[i]+mean[i]
-            targets[:,i,:,:] = targets[:,i,:,:]*std[i]+mean[i]
-          
+        outputs = outputs*std+mean
+        targets = targets*std+mean
+    elif args.scale == 'standard_fixed':
+         outputs = outputs*args.std+args.mean
+        targets = targets*args.std+args.mean 
     elif args.scale == 'minmax':
-        outputs = outputs*max_val.to(device)          
-        targets = targets*max_val.to(device)
+        outputs = outputs*max_val         
+        targets = targets*max_val
     elif args.scale == 'log':
         outputs = torch.exp(inputs)-1
         targets = torch.exp(targets)-1
@@ -122,7 +109,6 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
 
 def is_gan(args):
     if args.model == 'gan':
-        
         return True
     elif args.model == 'conv_gru':
         return True

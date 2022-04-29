@@ -10,7 +10,7 @@ def add_arguments():
     parser.add_argument("--scale", default='standard', help="standard, minmax, none")
     parser.add_argument("--model", default='gan')
     parser.add_argument("--model_id", default='deep_voxel_flow')
-    parser.add_argument("--model_id2", default='conv_gru_3_constraints')
+    parser.add_argument("--model_id2", default='conv_gru_3')
     parser.add_argument("--number_channels", default=64, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)
     parser.add_argument("--upsampling_factor", default=4, type=int)
@@ -29,29 +29,41 @@ def add_arguments():
     parser.add_argument("--early_stop", default=False,  type=bool)
     parser.add_argument("--patience", default=5, type=int)
     parser.add_argument("--dim", default=1, type=int)
-    parser.add_argument("--dim_out", default=1, type=int)
+    parser.add_argument("--dim_out", default=3, type=int)
     parser.add_argument("--exp_factor", default=1, type=float)
     parser.add_argument("--time", default=True, type=bool)
     parser.add_argument("--nsteps_out", default=3, type=int)
     parser.add_argument("--nsteps_in", default=2, type=int)
     parser.add_argument("--norm_dim", default=1, type=int)
+    parser.add_argument("--double", defalut=True, type=bool)
     return parser.parse_args()
 
 
 def main(args):
 
     data = load_data(args)
-    
-    model1 = models.VoxelFlow()
-    model2 = models.ConvGRUGeneratorDet()
-    
-    model1 = load_weights(model1, args.model_id)
-    model2 = load_weights(model2, args.model_id2)
-     
-    scores = evaluate_double_model(model1, model2, data, args)
-    
-    evaluate_double_model(model1, model2, data, args)
-    add_string = args.model_id + '_and_' + args.model_id2
+    if double:
+        model1 = models.VoxelFlow()
+        model2 = models.ConvGRUGeneratorDet()
+
+        model1 = load_weights(model1, args.model_id)
+        model2 = load_weights(model2, args.model_id2)
+
+        scores = evaluate_double_model(model1, model2, data, args)
+
+        
+        add_string = args.model_id + '_and_' + args.model_id2
+    else:
+        model1 = models.ConvGRUGeneratorDet()
+
+        model1 = load_weights(model1, args.model_id)
+
+
+        scores = evaluate_model(model1, data, args)
+
+        
+        add_string = args.model_id + '_evaluate_' 
+        
     create_report(scores, args, add_string)
     
 def load_weights(model, model_id):

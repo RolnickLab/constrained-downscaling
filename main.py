@@ -26,13 +26,11 @@ def add_arguments():
     parser.add_argument("--adv_factor", default=0.001, type=float)
     parser.add_argument("--early_stop", default=False,  type=bool)
     parser.add_argument("--patience", default=5, type=int)
-    parser.add_argument("--dim", default=2, type=int)
-    parser.add_argument("--dim_out", default=1, type=int)
     parser.add_argument("--exp_factor", default=1, type=float)
     parser.add_argument("--time", default=True, type=bool)
-    parser.add_argument("--nsteps_in", default=3, type=int)
-    parser.add_argument("--nsteps_out", default=3, type=int)
     parser.add_argument("--data_size", default=2035, type=int)
+    parser.add_argument("--mean", default=19, type=float)
+    parser.add_argument("--std", default=16, type=float)
     return parser.parse_args()
 
 def main(args):
