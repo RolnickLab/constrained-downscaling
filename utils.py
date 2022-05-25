@@ -36,6 +36,11 @@ def load_data(args):
         target_train = target_train /max_val
         input_val = input_val/max_val
         target_val = target_val/max_val
+    elif args.scale == 'minmax_fixed':
+        input_train = input_train /args.max
+        target_train = target_train /args.max
+        input_val = input_val/args.max
+        target_val = target_val/args.max
     elif args.scale == 'log':
         input_train = torch.log(input_train+1)
         target_train = torch.log(target_train+1)
@@ -45,34 +50,40 @@ def load_data(args):
     val_data = TensorDataset(input_val, target_val)
     train = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     val = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
-    return [train, val, mean, std, max_val]
+    return [train, val, mean, std, max_val, train_shape_in, train_shape_out, val_shape_in, val_shape_out]
 
 def load_model(args, discriminator=False):
 
     if discriminator:
-        if args.time:
-            model = models.DiscriminatorRNN()
-        else:
-            model = models.Discriminator()
+        #if args.time:
+        #    model = models.DiscriminatorRNN()
+        #else:
+        model = models.Discriminator()
     else:
         if args.noise:
             if args.model == 'conv_gru':
                 model = models.ConvGRUGenerator()
             else:
-                model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
+                model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
         elif args.model == 'mr_constr':
             model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
         elif args.model == 'conv_gru_det':
             model = models.ConvGRUGeneratorDet()
+        elif args.model == 'conv_gru_det_con':
+            model = models.ConvGRUGeneratorDetCon()
         elif args.model == 'frame_gru':
             model = models.FrameConvGRU()
         elif args.model == 'voxel_flow':
             model = models.VoxelFlow()
         elif args.model == 'time_end_to_end':
             model = models.TimeEndToEndModel()
+        elif args.model == 'resnet_new':
+            model = models.CNNUp()
+        elif args.model == 'esrgan':
+            model = models.ESRGANGenerator()
         
         else:
-            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
+            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
     model.to(device)
     return model
 
@@ -97,11 +108,14 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
         outputs = outputs*std+mean
         targets = targets*std+mean
     elif args.scale == 'standard_fixed':
-         outputs = outputs*args.std+args.mean
+        outputs = outputs*args.std+args.mean
         targets = targets*args.std+args.mean 
     elif args.scale == 'minmax':
         outputs = outputs*max_val         
         targets = targets*max_val
+    elif args.scale == 'minmax_fixed':
+        outputs = outputs*args.max         
+        targets = targets*args.max
     elif args.scale == 'log':
         outputs = torch.exp(inputs)-1
         targets = torch.exp(targets)-1

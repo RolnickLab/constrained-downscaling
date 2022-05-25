@@ -1,5 +1,5 @@
 from utils import process_for_training, is_gan, is_noisegan, load_model, get_optimizer, get_criterion, process_for_eval
-from utils import train_shape_in, train_shape_out, val_shape_in, val_shape_out
+#from utils import train_shape_in, train_shape_out, val_shape_in, val_shape_out
 import models
 import numpy as np
 from tqdm import tqdm
@@ -34,7 +34,8 @@ def run_training(args, data):
         running_loss = 0    
         running_discr_loss = 0
         running_adv_loss = 0
-        with tqdm(data[0], unit="batch") as tepoch:       
+        with tqdm(data[0], unit="batch") as tepoch: 
+            k = 0 
             for (inputs,  targets) in tepoch:          
                 inputs, targets = process_for_training(inputs, targets)
                 if is_gan(args):
@@ -43,8 +44,13 @@ def run_training(args, data):
                     running_discr_loss += discr_loss
                 else:
                     loss = optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args)
+                    
                     running_loss += loss
-        loss = running_loss/len(data)
+                    #print('training', running_loss, loss, k)
+                k +=1     
+                
+        #print('len', len(data))
+        loss = running_loss/len(data[0])
         train_loss.append(loss)
         if is_gan(args):
             dicsr_loss = running_discr_loss/len(data)
@@ -94,7 +100,7 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, d
 def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, tepoch, args):
     optimizer_discr.zero_grad()
     if args.noise:
-        if args.time:
+        if False:
             z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
             z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
             z = torch.Tensor(z).to(device)
@@ -108,7 +114,7 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
     else:
         outputs = model(inputs)
     batch_size = inputs.shape[0]
-    if args.time:
+    if False:
         real_label = torch.full((batch_size, args.nsteps_in, 1), 1, dtype=outputs.dtype).to(device)
         fake_label = torch.full((batch_size, args.nsteps_in, 1), 0, dtype=outputs.dtype).to(device)
     else:
@@ -116,7 +122,7 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
         fake_label = torch.full((batch_size, 1), 0, dtype=outputs.dtype).to(device)
 
     # It makes the discriminator distinguish between real sample and fake sample.
-    if args.time:
+    if False:
         real_output = discriminator_model(targets, inputs)
         fake_output = discriminator_model(outputs.detach(), inputs)
     else:
@@ -152,12 +158,13 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
     model.eval()
     running_loss = 0    
     with tqdm(data, unit="batch") as tepoch:       
-        for i, (inputs, targets) in enumerate(tepoch):          
+        for i, (inputs, targets) in enumerate(tepoch):     
+            
             inputs, targets = process_for_training(inputs, targets)
             if is_gan(args):
                 if args.noise:
-                    if args.time:
-                        z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+                    if False:
+                        z = np.random.normal( size=[inputs.shape[0], 1,1,32,32])
                         z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
                         z = torch.Tensor(z).to(device)
                         z_init = torch.Tensor(z_init).to(device)
@@ -182,10 +189,10 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
                 loss += args.adv_factor * adversarial_loss
             else:
                 outputs = model(inputs)
-                if i == 0:
-                    torch.save(outputs[0,0,:,:],'./data/images/'+args.model_id+'_'+str(epoch)+'.pt')
                 loss = criterion(outputs, targets)            
             running_loss += loss.item()
+            #print('val', running_loss, loss.item(), i)
+    #print('len', len(data))
     loss = running_loss/len(data)
     model.train()
     return loss
@@ -225,17 +232,14 @@ def check_for_early_stopping(val_loss, best, patience_counter, args):
 
 def evaluate_model(model, data, args):
     model.eval()
-    running_mse = np.zeros((args.dim,1))    
-    running_ssim = np.zeros((args.dim,1))
-    running_mae = np.zeros((args.dim,1)) 
+    running_mse = 0 
+    running_ssim = 0
+    running_mae = 0
     l2_crit = nn.MSELoss()
     l1_crit = nn.L1Loss()
-    data_it = iter(data[1])
-    first = data_it.next()
-    shape = first[1].shape
-    full_pred = torch.zeros((args.data_size, shape[1], shape[2], shape[3], shape[4]))
-    print(first[1].shape, first[0].shape, len(data_it))
-    with tqdm(data[1], unit="batch") as tepoch:       
+    ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4], reduction='mean')
+    full_pred = torch.zeros(data[6]) ###!!!change back to data[8]  
+    with tqdm(data[0], unit="batch") as tepoch:     ###!!!change back to data[1]  
             for i,(inputs,  targets) in enumerate(tepoch): 
                 inputs, targets = process_for_training(inputs, targets)
                 if args.noise:
@@ -254,42 +258,40 @@ def evaluate_model(model, data, args):
                     outputs = model(inputs)
                     
                 outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
-                print(full_pred.shape, outputs.shape)
+                print(full_pred.shape, outputs.shape, targets.shape)
                 full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
-                if i == 0:
-                    torch.save(outputs, './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
+                '''
+                for j in range(targets.shape[1]):
                     
-                for j in range(args.dim_out):
-                    ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4][j], reduction='mean')
-                    running_mse[j] += l2_crit(outputs[...,j,:,:], targets[...,j,:,:]).item()
-                    running_mae[j] += l1_crit(outputs[...,j,:,:],targets[...,j,:,:]).item()
-                    if args.time:
-                        for t in range(args.nsteps_out):
-                            running_ssim[j] += ssim_criterion(outputs[:,t,j,:,:].unsqueeze(1), targets[:,t,j,:,:].unsqueeze(1)).item()
-                        running_ssim[j] *=1/args.nsteps_out
-                    else:
-                        running_ssim[j] += ssim_criterion(outputs[:,j,:,:].unsqueeze(1), targets[:,j,:,:].unsqueeze(1)).item()
+                    running_mse += l2_crit(outputs[:,j,...], targets[:,j,...]).item()
+                    running_mae += l1_crit(outputs[:,j,...],targets[:,j,...]).item()                
+                    running_ssim += ssim_criterion(outputs[:,j,...], targets[:,j,...]).item()       '''
+                running_mse += l2_crit(outputs, targets).item()
+                
+                running_mae += l1_crit(outputs,targets).item()                
+                #running_ssim += ssim_criterion(outputs, targets).item()
                                             
-                                            
+    '''                                       
+    mse = running_mse/(len(data)*targets.shape[1])
+    mae = running_mae/(len(data)*targets.shape[1])
+    ssim = running_ssim/(len(data)*targets.shape[1])'''
     mse = running_mse/len(data)
     mae = running_mae/len(data)
     ssim = running_ssim/len(data)
-    psnr = np.zeros((args.dim,1))
-    for i in range(args.dim):
-        psnr[i] = calculate_pnsr(mse[i], data[4][0])
-    torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_fullprediction.pt')                                      
-    return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':np.ones((args.dim,1))-ssim}
+    psnr = calculate_pnsr(mse, data[4])
+    torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_fullprediction_training.pt')                                      
+    return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
 
 
 def evaluate_double_model(model1, model2, data, args):
     model1.eval()
     model2.eval()
-    running_mse = np.zeros((args.dim,1))    
-    running_ssim = np.zeros((args.dim,1))
-    running_mae = np.zeros((args.dim,1)) 
+    running_mse = 0    
+    running_ssim = 0
+    running_mae = 0
     l2_crit = nn.MSELoss()
     l1_crit = nn.L1Loss()
-    full_pred = torch.zeros((2035, 3 ,1 , 128, 128))
+    full_pred = torch.zeros(data[8])
     with tqdm(data[1], unit="batch") as tepoch:       
             for i,(inputs,  targets) in enumerate(tepoch): 
                 inputs, targets = process_for_training(inputs, targets)
@@ -307,38 +309,28 @@ def evaluate_double_model(model1, model2, data, args):
                         outputs = model2(model1(inputs, z))
                 else:
                     out = model1(inputs)
-                    x = torch.cat((inputs[:,0:1,:,:], out, inputs[:,1:2,:,:]), dim=1)
+                    x = torch.cat((inputs[:,0:1,...], out, inputs[:,1:2,...]), dim=1)
                     if i ==0:
-                        torch.save(x, './data/prediction/intermediate.pt')
-                    x = x.unsqueeze(2)
+                        torch.save(x, './data/prediction/intermediate_'+args.dataset+'_'+args.model_id+'_'+args.model_id2+'.pt')
                     outputs = model2(x)
                 outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
                 full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
-                if i == 0:
-                    torch.save(outputs, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+'_prediction.pt')
-                for j in range(args.dim):
-                    print(outputs.shape)
-                    ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=data[4][j], reduction='mean')
-                    running_mse[j] += l2_crit(outputs[...,j,:,:], targets[...,j,:,:]).item()
-                    running_mae[j] += l1_crit(outputs[...,j,:,:],targets[...,j,:,:]).item()
-                    if args.time:
-                        for t in range(args.nsteps_in):
-                            running_ssim[j] += ssim_criterion(outputs[:,t,j,:,:].unsqueeze(1), targets[:,t,j,:,:].unsqueeze(1)).item()
-                        running_ssim[j] *=1/args.nsteps_in
-                    else:
-                        running_ssim[j] += ssim_criterion(outputs[:,j,:,:].unsqueeze(1), targets[:,j,:,:].unsqueeze(1)).item()
+                running_mse += l2_crit(outputs, targets).item()
+                
+                running_mae += l1_crit(outputs,targets).item()                
+                #running_ssim += ssim_criterion(outputs, targets).item()
                                             
-                                            
+    '''                                       
+    mse = running_mse/(len(data)*targets.shape[1])
+    mae = running_mae/(len(data)*targets.shape[1])
+    ssim = running_ssim/(len(data)*targets.shape[1])'''
     mse = running_mse/len(data)
     mae = running_mae/len(data)
     ssim = running_ssim/len(data)
-    psnr = np.zeros((args.dim,1))
-    for i in range(args.dim):
-        psnr[i] = calculate_pnsr(mse[i], data[4][i])
+    psnr = 0
+    psnr = calculate_pnsr(mse, data[4])
     torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+'_fullprediction.pt')                                      
-    return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':np.ones((args.dim,1))-ssim}
-    
-    
+    return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
                                             
 
 def calculate_pnsr(mse, max_val):

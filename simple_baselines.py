@@ -1,4 +1,4 @@
-
+from skimage import transform
 import numpy as np
 import torch
 from PIL import Image
@@ -10,12 +10,13 @@ import csv
 
 def add_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='dataset15', help="choose a data set to use")
-    parser.add_argument("--model", default='voxel_convgru')
-    parser.add_argument("--model_id", default='bicubic_frame_test')
+    parser.add_argument("--dataset", default='dataset20', help="choose a data set to use")
+    parser.add_argument("--model", default='dataset20_resnet2_exp1_act_fullprediction_training')
+    parser.add_argument("--model_id", default='dataset20_resnet2_exp1_act_fullprediction_training')
     parser.add_argument("--time", default=True)
     parser.add_argument("--nn", default=True)
-    parser.add_argument("--time_steps", type=int, default=3)
+    parser.add_argument("--time_steps", type=int, default=1)
+    parser.add_argument("--mass_violation", type=bool, default=True)
     return parser.parse_args()
 
 def main(args):
@@ -24,15 +25,17 @@ def main(args):
     target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
     val_data = TensorDataset(input_val, target_val)
     pred = np.zeros(target_val.shape)
+    print(pred.shape)
     
     mse = 0
     mae = 0
     ssim = 0
+    mass_violation = 0
     l2_crit = nn.MSELoss()
     l1_crit = nn.L1Loss()
     ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=torch.max(target_val) , reduction='mean')
     if args.nn:
-        pred = torch.load('./data/prediction/'+args.model_id+'_fullprediction.pt')
+        pred = torch.load('./data/prediction/'+args.model_id+'.pt')
         pred = pred.detach().cpu().numpy()
         print(pred.shape)
     for i,(lr, hr) in enumerate(val_data):
@@ -50,21 +53,26 @@ def main(args):
                     elif j == 2:
                         pred[i,j,0,:,:] = np.array(Image.fromarray(im[1,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BICUBIC))
                     else:
-                        pred[i,j,0,:,:] = pred[i,0,0,:,:]#0.5*(pred[i,0,0,:,:]+ np.array(Image.fromarray(im[1,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BICUBIC)))
+                        pred[i,j,0,:,:] =np.array(Image.fromarray(0.5*(im[1,0,...]+im[0,0,...])).resize((4*lr.shape[2],4*lr.shape[2]), Image.BICUBIC))
                 elif args.model == 'kronecker':
                     pred[i,j,0,:,:] = np.kron(im[j,0,...], np.ones((4,4)))
+                elif args.model=='frame_inter':
+                    print(pred.shape, im.shape)
+                    pred[i,j,0,... ] = 0.5*(im[0,0,...]+im[1,0,...])
                 
 
-                mse += l2_crit(torch.Tensor(pred[i,j,0,:,:]), hr[j,0,...]).item()
-                mae += l1_crit(torch.Tensor(pred[i,j,0,:,:]), hr[j,0,...]).item()
-                ssim += ssim_criterion(torch.Tensor(pred[i,j,...]).unsqueeze(0), hr[j,...].unsqueeze(0)).item()
-                #print(ssim, i, j)
+                mse += l2_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item()
+                mae += l1_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item()
+                ssim += ssim_criterion(torch.Tensor(pred[i,j:j+1,...]), hr[j:j+1,...]).item()
+                if args.mass_violation:
+                    mass_violation += np.mean( np.abs(transform.downscale_local_mean(pred[i,j,...], (1,4,4)) -im[j,...]))
+                #print(l2_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item())
         elif args.model=='frame_inter':
-            pred[i,... ] = 0.5*(im[0,...]+im[1,...])
-            mse += l2_crit(torch.Tensor(pred[i,:,:]), hr).item()
-            mae += l1_crit(torch.Tensor(pred[i,:,:]), hr).item()
-            ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0), hr.unsqueeze(0)).item()
-            
+            pred[i,... ] = 0.5*(im[0:1,...]+im[1:2,...])
+            mse += l2_crit(torch.Tensor(pred[i,...]), hr).item()
+            mae += l1_crit(torch.Tensor(pred[i,...]), hr).item()
+            ssim += ssim_criterion(torch.Tensor(pred[i,...]), hr).item()
+            print(l1_crit(torch.Tensor(pred[i,...]), hr).item())
         else:
             if args.model == 'bilinear':
                 pred[i,:,:] = np.array(Image.fromarray(im).resize((4*lr.shape[1],4*lr.shape[1]), Image.BILINEAR))
@@ -83,14 +91,17 @@ def main(args):
         mse *= 1/(input_val.shape[0]*args.time_steps)
         mae *= 1/(input_val.shape[0]*args.time_steps)
         ssim *= 1/(input_val.shape[0]*args.time_steps)
+        if args.mass_violation:
+            mass_violation *= 1/(input_val.shape[0]*args.time_steps)
     else:
         mse *= 1/input_val.shape[0]   
         mae *= 1/input_val.shape[0] 
         ssim *= 1/input_val.shape[0] 
     psnr = calculate_pnsr(mse, torch.max(target_val)   )     
-    scores = {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
+    scores = {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim, 'Mass_violation': mass_violation}
     print(scores)
     create_report(scores, args)
+    np.save('./data/prediction/bicubic_frame.npy', pred)
             
             
 def calculate_pnsr(mse, max_val):

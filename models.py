@@ -23,8 +23,25 @@ class ResidualBlock(nn.Module):
         out += residual
         out = self.relu(out)
         return out
+    
+    
+class ResidualUpsampling(nn.Module):
+    def __init__(self, in_channels=8, out_channels=64, stride=1, downsample=None):
+        super(ResidualUpsampling, self).__init__()
+        self.res1 = ResidualBlock(in_channels, in_channels, stride=1)
+        self.res2 = ResidualBlock(in_channels, in_channels, stride=1)
+        self.res3 = ResidualBlock(in_channels, out_channels, stride=1)
+        self.up = nn.UpsamplingBilinear2d(scale_factor=2)
+        
+    def forward(self, x):
+        x = self.res1(x)
+        x = self.res2(x)
+        x = self.res3(x)
+        x = self.up(x)
+        return x
+    
 
-class DownscaleConstraints(nn.Module):
+class MultConstraints(nn.Module):
     def __init__(self, upsampling_factor):
         super(DownscaleConstraints, self).__init__()
         self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
@@ -53,7 +70,7 @@ class SoftmaxConstraints(nn.Module):
         self.upsampling_factor = upsampling_factor
         self.exp_factor = exp_factor
     def forward(self, y, lr):
-        y = torch.exp(self.exp_factor*y)
+        y = torch.exp(y/self.exp_factor)
         sum_y = self.pool(y)
         out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
@@ -72,6 +89,56 @@ class MRSoftmaxConstraints(nn.Module):
         out = y*torch.kron(mr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
+#network architecture
+class ResNet(nn.Module):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False, dim=2):
+        super(ResNet, self).__init__()
+        # First layer
+        self.conv1 = nn.Sequential(nn.Conv2d(1, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.res_up1 = ResidualUpsampling(number_channels, number_channels)
+        self.res_up2 = ResidualUpsampling(number_channels, number_channels)
+        self.upsampling = nn.ModuleList()
+        for k in range(2):
+            self.upsampling.append(nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2) )
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlock(number_channels, number_channels))
+        self.softmax_constraints = softmax_constraints
+        if softmax_constraints:
+            self.downscale_constraint = SoftmaxConstraints(upsampling_factor=upsampling_factor)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(number_channels, 1, kernel_size=1, stride=1, padding=0), nn.ReLU(inplace=True))    
+    def forward(self, x):  
+        out = self.conv1(x[:,0,...])
+        #out = self.res_up1(out)
+        #out = self.res_up2(out)
+        for layer in self.upsampling:
+                out = layer(out)
+        #for layer in self.res_blocks:
+        #    out = layer(out)
+        out = self.conv2(out)
+        if self.softmax_constraints:
+            out = self.downscale_constraint(out, x)
+        out = out.unsqueeze(1)
+        return out  
+    
+class CNNUp(nn.Module):
+    def __init__(self):
+        super(CNNUp,self).__init__()
+        self.up1 = nn.UpsamplingBilinear2d(scale_factor=2)
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, 1, kernel_size=3, padding=1, stride=1), nn.ReLU(inplace=True))
+        self.up2 = nn.UpsamplingBilinear2d(scale_factor=2)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(1, 1, kernel_size=1, stride=1, padding=0), nn.ReLU(inplace=True))
+        
+    def forward(self, x):
+        out = self.up1(x[:,0,...])
+        out = self.conv1(out)
+        out = self.up2(out)
+        out = self.conv2(out)
+        return out.unsqueeze(1)
+        
 
 
     
@@ -137,7 +204,6 @@ class ResNet1(nn.Module):
                 out = self.downscale_constraint(out, x)
             return out  
         
-        
 class ResNet2(nn.Module):
     def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False, dim=1):
         super(ResNet2, self).__init__()
@@ -171,10 +237,10 @@ class ResNet2(nn.Module):
             
         self.noise = noise
         self.downscale_constraints = downscale_constraints
-    def forward(self, x, mr, z=None): 
+    def forward(self, x, mr=None, z=None): 
         if self.noise:
             out = self.conv_trans0(z)
-            out = self.conv1(torch.cat((x,out), dim=1))
+            out = self.conv1(torch.cat(( x[:,0,...],out), dim=1))
             for layer in self.res_blocks:
                 out = layer(out)
             out = self.conv2(out)
@@ -183,11 +249,11 @@ class ResNet2(nn.Module):
             out = self.conv3(out)
             out = self.conv4(out)
             if self.downscale_constraints:
-                out = self.downscale_constraint(out, x)
+                out = self.downscale_constraint(out,  x[:,0,...])
             return out  
         else:
             
-            out = self.conv1(x)
+            out = self.conv1(x[:,0,...])
             for layer in self.upsampling:
                 out = layer(out)
             out = self.conv2(out)    
@@ -196,9 +262,124 @@ class ResNet2(nn.Module):
             out = self.conv3(out)
             out = self.conv4(out)
             if self.downscale_constraints:
-                out = self.downscale_constraint(out, mr)
+                out = self.downscale_constraint(out, x[:,0,...])
             #out[:,0,:,:] *= 16
+            out = out.unsqueeze(1)
             return out  
+        
+###successive constrainning
+        
+###ESRGAN 
+        
+class ResidualDenseBlock(nn.Module):
+    """Achieves densely connected convolutional layers.
+    `Densely Connected Convolutional Networks <https://arxiv.org/pdf/1608.06993v5.pdf>` paper.
+    Args:
+        channels (int): The number of channels in the input image.
+        growth_channels (int): The number of channels that increase in each layer of convolution.
+    """
+
+    def __init__(self, channels: int, growth_channels: int) -> None:
+        super(ResidualDenseBlock, self).__init__()
+        self.conv1 = nn.Conv2d(channels + growth_channels * 0, growth_channels, (3, 3), (1, 1), (1, 1))
+        self.conv2 = nn.Conv2d(channels + growth_channels * 1, growth_channels, (3, 3), (1, 1), (1, 1))
+        self.conv3 = nn.Conv2d(channels + growth_channels * 2, growth_channels, (3, 3), (1, 1), (1, 1))
+        self.conv4 = nn.Conv2d(channels + growth_channels * 3, growth_channels, (3, 3), (1, 1), (1, 1))
+        self.conv5 = nn.Conv2d(channels + growth_channels * 4, channels, (3, 3), (1, 1), (1, 1))
+
+        self.leaky_relu = nn.LeakyReLU(0.2, True)
+        self.identity = nn.Identity()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+
+        out1 = self.leaky_relu(self.conv1(x))
+        out2 = self.leaky_relu(self.conv2(torch.cat([x, out1], 1)))
+        out3 = self.leaky_relu(self.conv3(torch.cat([x, out1, out2], 1)))
+        out4 = self.leaky_relu(self.conv4(torch.cat([x, out1, out2, out3], 1)))
+        out5 = self.identity(self.conv5(torch.cat([x, out1, out2, out3, out4], 1)))
+        out = torch.mul(out5, 0.2)
+        out = torch.add(out, identity)
+
+        return out
+
+
+class ResidualResidualDenseBlock(nn.Module):
+    """Multi-layer residual dense convolution block.
+    Args:
+        channels (int): The number of channels in the input image.
+        growth_channels (int): The number of channels that increase in each layer of convolution.
+    """
+
+    def __init__(self, channels: int, growth_channels: int) -> None:
+        super(ResidualResidualDenseBlock, self).__init__()
+        self.rdb1 = ResidualDenseBlock(channels, growth_channels)
+        self.rdb2 = ResidualDenseBlock(channels, growth_channels)
+        self.rdb3 = ResidualDenseBlock(channels, growth_channels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+
+        out = self.rdb1(x)
+        out = self.rdb2(out)
+        out = self.rdb3(out)
+        out = torch.mul(out, 0.2)
+        out = torch.add(out, identity)
+
+        return out
+    
+    
+class ESRGANGenerator(nn.Module):
+    def __init__(self) -> None:
+        super(ESRGANGenerator, self).__init__()
+        # The first layer of convolutional layer.
+        self.conv1 = nn.Conv2d(1, 64, (3, 3), (1, 1), (1, 1))
+
+        # Feature extraction backbone network.
+        trunk = []
+        for _ in range(23):
+            trunk.append(ResidualResidualDenseBlock(64, 32))
+        self.trunk = nn.Sequential(*trunk)
+
+        # After the feature extraction network, reconnect a layer of convolutional blocks.
+        self.conv2 = nn.Conv2d(64, 64, (3, 3), (1, 1), (1, 1))
+
+        # Upsampling convolutional layer.
+        self.upsampling1 = nn.Sequential(
+            nn.Conv2d(64, 64, (3, 3), (1, 1), (1, 1)),
+            nn.LeakyReLU(0.2, True)
+        )
+        self.upsampling2 = nn.Sequential(
+            nn.Conv2d(64, 64, (3, 3), (1, 1), (1, 1)),
+            nn.LeakyReLU(0.2, True)
+        )
+
+        # Reconnect a layer of convolution block after upsampling.
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(64, 64, (3, 3), (1, 1), (1, 1)),
+            nn.LeakyReLU(0.2, True)
+        )
+
+        # Output layer.
+        self.conv4 = nn.Conv2d(64, 1, (3, 3), (1, 1), (1, 1))
+
+    # The model should be defined in the Torch.script method.
+    def _forward_impl(self, x: torch.Tensor) -> torch.Tensor:
+        out1 = self.conv1(x[:,0,...])
+        out = self.trunk(out1)
+        out2 = self.conv2(out)
+        out = torch.add(out1, out2)
+        out = self.upsampling1(F.interpolate(out, scale_factor=2, mode="nearest"))
+        out = self.upsampling2(F.interpolate(out, scale_factor=2, mode="nearest"))
+        out = self.conv3(out)
+        out = self.conv4(out)
+
+        out = torch.clamp_(out, 0.0, 1.0)
+
+        return out.unsqueeze(1)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self._forward_impl(x)
         
 class MRResNet(nn.Module):
     def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, downscale_constraints=False, softmax_constraints=False, dim=1):
@@ -283,6 +464,7 @@ class ResNetNoise(nn.Module):
         self.downscale_constraints = downscale_constraints
     def forward(self, x, z): 
         out = self.linear(z)
+        x = x[:,0,...]
         out = torch.reshape(out, (x.shape))
         out = self.conv1(torch.cat((x,out), dim=1))
         
@@ -296,6 +478,7 @@ class ResNetNoise(nn.Module):
         out = self.conv4(out)
         if self.downscale_constraints:
             out = self.downscale_constraint(out, x)
+        out = out.unsqueeze(1)
         return out  
        
                     
@@ -311,6 +494,7 @@ class Discriminator(nn.Module):
         self.conv9 = nn.Conv2d(128, 1, 1, stride=1, padding=1)
 
     def forward(self, x):
+        x = x[:,0,...]
         x = self.conv1(x)
         x = self.conv2(x)    
         x = self.conv3(x)
@@ -666,6 +850,36 @@ class ConvGRUGeneratorDet(nn.Module):
                 self.upsampling.append(TimeDistributed(nn.UpsamplingBilinear2d(scale_factor=2)))
             self.upsampling.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='leaky_relu'))          
         self.conv2 = TimeDistributed(nn.Conv2d(number_channels, 1, kernel_size=(3,3), padding=1))
+
+    
+    def forward(self, low_res):   
+        initial_state = self.initialize(low_res[:,0,...])
+        xt = self.conv1(low_res)
+        for layer in self.res_blocks:
+            xt = layer(xt)
+        x = self.convgru([xt, initial_state])
+        h = x[:,-1,...]
+        for layer in self.upsampling:
+            x = layer(x)           
+        img_out = self.conv2(x)   
+       
+        return img_out
+    
+class ConvGRUGeneratorDetCon(nn.Module):    
+    def __init__(self, number_channels=64, number_residual_blocks=3, upsampling_factor=2, time_steps=3):
+        super(ConvGRUGeneratorDetCon, self).__init__()  
+        self.initialize = InitialStateDet()
+        self.conv1 = TimeDistributed(nn.Conv2d(1, number_channels, kernel_size=(3,3), padding=1))
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='relu'))
+        self.convgru = GenGateGRU(return_sequences=True, time_steps=time_steps)  
+        self.upsampling = nn.ModuleList()
+        for i in range(3):
+            if i > 0:
+                self.upsampling.append(TimeDistributed(nn.UpsamplingBilinear2d(scale_factor=2)))
+            self.upsampling.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='leaky_relu'))          
+        self.conv2 = TimeDistributed(nn.Conv2d(number_channels, 1, kernel_size=(3,3), padding=1))
         self.constraint = SoftmaxConstraintsTime(upsampling_factor=4)
     
     def forward(self, low_res):   
@@ -752,8 +966,10 @@ class VoxelFlow(nn.Module):
         self.upsample = nn.UpsamplingBilinear2d(scale_factor=2)
 
     def forward(self, x):
+        x = x[...,0,:,:]
         input_var = x
         input_size = tuple(x.size()[2:4])
+        #print(x.shape)
         x = self.conv1(x)
         x = self.conv1_bn(x)
         conv1 = self.relu(x)
@@ -801,7 +1017,7 @@ class VoxelFlow(nn.Module):
         output_2 = torch.nn.functional.grid_sample(input_var[:, 1:2, :, :],torch.stack([coor_x_2, coor_y_2], dim=3),padding_mode='border', align_corners=True)
         mask = 0.5 * (1.0 + mask)
         x = mask * output_1 + (1.0 - mask) * output_2
-        return x
+        return x.unsqueeze(1)
     
     
 class TimeEndToEndModel(nn.Module):
@@ -814,8 +1030,7 @@ class TimeEndToEndModel(nn.Module):
         x_in = x
         x = self.temporal_sr(x)
         #print(x.shape, x_in.shape)
-        x = torch.cat((x_in[:,0:1,:,:], x, x_in[:,1:2,:,:]), dim=1)
-        x = x.unsqueeze(2)
+        x = torch.cat((x_in[:,0:1,...], x, x_in[:,1:2,...]), dim=1)
         x = self.spatial_sr(x)
         return x
     
