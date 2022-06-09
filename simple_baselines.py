@@ -10,13 +10,13 @@ import csv
 
 def add_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='dataset20', help="choose a data set to use")
-    parser.add_argument("--model", default='dataset20_resnet2_exp1_act_fullprediction_training')
-    parser.add_argument("--model_id", default='dataset20_resnet2_exp1_act_fullprediction_training')
+    parser.add_argument("--dataset", default='dataset26', help="choose a data set to use")
+    parser.add_argument("--model", default='dataset23_resnet_sconstraints_st_0_256')
+    parser.add_argument("--model_id", default='dataset23_resnet_sconstraints_st_0_256_fullprediction')
     parser.add_argument("--time", default=True)
     parser.add_argument("--nn", default=True)
     parser.add_argument("--time_steps", type=int, default=1)
-    parser.add_argument("--mass_violation", type=bool, default=True)
+    parser.add_argument("--mass_violation", type=bool, default=False)
     return parser.parse_args()
 
 def main(args):
@@ -26,7 +26,7 @@ def main(args):
     val_data = TensorDataset(input_val, target_val)
     pred = np.zeros(target_val.shape)
     print(pred.shape)
-    
+    factor = 16
     mse = 0
     mae = 0
     ssim = 0
@@ -46,7 +46,7 @@ def main(args):
                 if args.model == 'bilinear':
                     pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BILINEAR))
                 elif args.model == 'bicubic':
-                    pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BICUBIC))
+                    pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((factor*lr.shape[2],factor*lr.shape[2]), Image.BICUBIC))
                 elif args.model == 'bicubic_frame':
                     if j == 0:
                         pred[i,j,0,:,:] = np.array(Image.fromarray(im[0,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BICUBIC))
@@ -60,19 +60,19 @@ def main(args):
                     print(pred.shape, im.shape)
                     pred[i,j,0,... ] = 0.5*(im[0,0,...]+im[1,0,...])
                 
-
+                #print(l2_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item())
                 mse += l2_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item()
                 mae += l1_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item()
                 ssim += ssim_criterion(torch.Tensor(pred[i,j:j+1,...]), hr[j:j+1,...]).item()
                 if args.mass_violation:
-                    mass_violation += np.mean( np.abs(transform.downscale_local_mean(pred[i,j,...], (1,4,4)) -im[j,...]))
+                    mass_violation += np.mean( np.abs(transform.downscale_local_mean(pred[i,j,...], (1,8,8)) -im[j,...]))
                 #print(l2_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item())
         elif args.model=='frame_inter':
             pred[i,... ] = 0.5*(im[0:1,...]+im[1:2,...])
             mse += l2_crit(torch.Tensor(pred[i,...]), hr).item()
             mae += l1_crit(torch.Tensor(pred[i,...]), hr).item()
             ssim += ssim_criterion(torch.Tensor(pred[i,...]), hr).item()
-            print(l1_crit(torch.Tensor(pred[i,...]), hr).item())
+            #print(l1_crit(torch.Tensor(pred[i,...]), hr).item())
         else:
             if args.model == 'bilinear':
                 pred[i,:,:] = np.array(Image.fromarray(im).resize((4*lr.shape[1],4*lr.shape[1]), Image.BILINEAR))

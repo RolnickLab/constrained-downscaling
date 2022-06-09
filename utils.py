@@ -8,6 +8,8 @@ device = 'cuda'
 def load_data(args):
     input_train = torch.load('./data/train/'+args.dataset+'/input_train.pt')
     target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
+    #input_train = input_train[:4000,...]
+    #target_train = target_train[:4000,...]
     input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
     target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
     #define dimesions
@@ -41,14 +43,23 @@ def load_data(args):
         target_train = target_train /args.max
         input_val = input_val/args.max
         target_val = target_val/args.max
+    elif args.scale == 'minus_to_one_fixed':
+        input_train = 2*input_train /args.max-1
+        target_train = 2*target_train /args.max -1
+        input_val = 2*input_val/args.max -1
+        target_val = 2*target_val/args.max -1
     elif args.scale == 'log':
         input_train = torch.log(input_train+1)
         target_train = torch.log(target_train+1)
         input_val = torch.log(input_val+1)
-        target_val = torch.log(target_val+1)       
+        target_val = torch.log(target_val+1)  
+    print(input_train.mean(), input_train.std(), input_train.max(), input_train.min())
+    print(target_train.mean(), target_train.std(), target_train.max(), target_train.min())
+    print(input_val.mean(), input_val.std(), input_val.max(), input_val.min())
+    print(target_val.mean(), target_val.std(), target_val.max(), target_val.min())
     train_data = TensorDataset(input_train,  target_train)
     val_data = TensorDataset(input_val, target_val)
-    train = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
+    train = DataLoader(train_data, batch_size=args.batch_size, shuffle=True) 
     val = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
     return [train, val, mean, std, max_val, train_shape_in, train_shape_out, val_shape_in, val_shape_out]
 
@@ -64,9 +75,9 @@ def load_model(args, discriminator=False):
             if args.model == 'conv_gru':
                 model = models.ConvGRUGenerator()
             else:
-                model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
+                model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
         elif args.model == 'mr_constr':
-            model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=args.dim)
+            model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=1, output_mr=args.mr)
         elif args.model == 'conv_gru_det':
             model = models.ConvGRUGeneratorDet()
         elif args.model == 'conv_gru_det_con':
@@ -81,9 +92,14 @@ def load_model(args, discriminator=False):
             model = models.CNNUp()
         elif args.model == 'esrgan':
             model = models.ESRGANGenerator()
-        
+        elif args.model == 'srgan':
+            model = models.SRGANGenerator(n_residual_blocks=args.number_residual_blocks, upsample_factor=args.upsampling_factor)
+        elif args.model == 'res_2up':
+            model = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
+        elif args.model == 'res_3up':
+            model = models.ResNet3Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
         else:
-            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
+            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
     model.to(device)
     return model
 
@@ -116,6 +132,9 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
     elif args.scale == 'minmax_fixed':
         outputs = outputs*args.max         
         targets = targets*args.max
+    elif args.scale == 'minus_to_one_fixed':
+        outputs = (outputs+1)/2*args.max         
+        targets = (targets+1)/2*args.max
     elif args.scale == 'log':
         outputs = torch.exp(inputs)-1
         targets = torch.exp(targets)-1

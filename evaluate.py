@@ -7,12 +7,13 @@ from utils import load_data
 def add_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default='dataset20', help="choose a data set to use")
-    parser.add_argument("--scale", default='standard_fixed', help="standard, minmax, none")
+    parser.add_argument("--scale", default='none', help="standard, minmax, none")
     parser.add_argument("--model", default='resnet2_exp1_act')
-    parser.add_argument("--model_id", default='resnet2_exp1_act')
+    parser.add_argument("--model_id", default='resnet_lr_mr_no_scale')
+    parser.add_argument("--model_id2", default='resnet_mr_hr_no_scale')
     parser.add_argument("--number_channels", default=32, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)
-    parser.add_argument("--upsampling_factor", default=4, type=int)
+    parser.add_argument("--upsampling_factor", default=2, type=int)
     parser.add_argument("--noise", default=False)
     parser.add_argument("--downscale_constraints", default=True, type=bool)
     parser.add_argument("--softmax_constraints", default=True, type=bool)
@@ -34,7 +35,7 @@ def add_arguments():
     parser.add_argument("--mean", default=19, type=float)
     parser.add_argument("--std", default=16, type=float)
     parser.add_argument("--max", default=150, type=float)
-    parser.add_argument("--double", default=False, type=bool)
+    parser.add_argument("--double", default=True, type=bool)
     return parser.parse_args()
 
 
@@ -42,8 +43,8 @@ def main(args):
 
     data = load_data(args)
     if args.double:
-        model2 = models.ConvGRUGeneratorDet()
-        model1 = models.VoxelFlow()
+        model2 = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
+        model1 = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
 
         model1 = load_weights(model1, args.model_id)
         model2 = load_weights(model2, args.model_id2)
