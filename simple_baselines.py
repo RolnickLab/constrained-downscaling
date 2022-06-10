@@ -11,8 +11,8 @@ import csv
 def add_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default='dataset26', help="choose a data set to use")
-    parser.add_argument("--model", default='dataset23_resnet_sconstraints_st_0_256')
-    parser.add_argument("--model_id", default='dataset23_resnet_sconstraints_st_0_256_fullprediction')
+    parser.add_argument("--model", default='dataset23_resnet_sconstraints_none_256_0')
+    parser.add_argument("--model_id", default='dataset23_resnet_sconstraints_none_256_0_fullprediction')
     parser.add_argument("--time", default=True)
     parser.add_argument("--nn", default=True)
     parser.add_argument("--time_steps", type=int, default=1)

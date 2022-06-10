@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from torch.autograd import Variable
+
+motif_basis = Variable(torch.load('./data/basis_4.pt'),requires_grad=True).to('cuda')
 
 #building blocks for networks
 def conv3x3(in_channels, out_channels, stride=1):
@@ -80,12 +83,36 @@ class SoftmaxConstraints(nn.Module):
         self.upsampling_factor = upsampling_factor
         self.exp_factor = exp_factor
     def forward(self, y, lr):
-        y = torch.exp(y/self.exp_factor+19)
+        y = torch.exp(y/self.exp_factor)
         sum_y = self.pool(y)
         out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
 
+        self.motifs = Motifs()
+        self.add_channels = AddChannels()
+
+class Motifs(nn.Module):
+    def __init__(self):
+        super(Motifs, self).__init__()
+    def forward(self, y):
+        out = Variable(torch.zeros((y.shape[0],y.shape[1],y.shape[2]*4,y.shape[3]*4)), requires_grad=True).to('cuda')
+        for i in range(16):
+            out[:,i,...] = torch.kron(y[:,i,...], motif_basis[i,...])
+        return out
+        
+class MultIn(nn.Module):
+    def __init__(self):
+        super(MultIn, self).__init__()
+    def forward(self, y, lr):
+        return y*lr
+    
+class AddChannels(nn.Module):
+    def __init__(self):
+        super(AddChannels, self).__init__()
+    def forward(self, y):
+        return torch.sum(y, dim=1)
+        
     
 class MRSoftmaxConstraints(nn.Module):
     def __init__(self, upsampling_factor, exp_factor=1):
@@ -285,6 +312,50 @@ class ResNet2(nn.Module):
             #out[:,0,:,:] *= 16
             out = out.unsqueeze(1)
             return out  
+        
+class MotifNet(nn.Module):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1):
+        super(MotifNet, self).__init__()
+        # First layer
+        
+        self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        #Residual Blocks
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlock(number_channels, number_channels))
+        # Second conv layer post residual blocks
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        # Upsampling layers
+        self.upsampling = nn.ModuleList()
+        for k in range(int(np.rint(np.log2(upsampling_factor)))):
+            self.upsampling.append(nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2) )
+        # Next layer after upper sampling
+        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, 16, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.softmax = nn.Softmax(dim=1)
+        self.mult_in = MultIn()
+        self.motifs = Motifs()
+        self.add_channels = AddChannels()
+        
+        
+    def forward(self, x): 
+        
+        #print(x.shape)
+        out = self.conv1(x[:,0,...])
+        out = self.conv2(out)  
+        for layer in self.res_blocks:
+            out = layer(out)
+        out = self.conv3(out)
+        out = self.softmax(out)
+        out = self.mult_in(out, x[:,0,...])
+        out = self.motifs(out)
+        out = self.add_channels(out)
+        out = out.unsqueeze(1)
+        out = out.unsqueeze(1)
+        return out  
+        
+        
+
         
 class ResNet2Up(nn.Module):
     def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, output_mr=False):

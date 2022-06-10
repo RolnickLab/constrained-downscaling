@@ -6,9 +6,9 @@ import argparse
 def add_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default='dataset23', help="choose a data set to use")
-    parser.add_argument("--scale", default='standard_fixed', help="standard, minmax, none")
-    parser.add_argument("--model", default='resnet')
-    parser.add_argument("--model_id", default='resnet_sconstraints_st_0_256')
+    parser.add_argument("--scale", default='none', help="standard, minmax, none")
+    parser.add_argument("--model", default='motifnet')
+    parser.add_argument("--model_id", default='motifnet_sconstraints_none_256_1')
     parser.add_argument("--number_channels", default=32, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)#""!!change
     parser.add_argument("--upsampling_factor", default=4, type=int)
@@ -18,8 +18,8 @@ def add_arguments():
     parser.add_argument("--loss", default='mse')
     parser.add_argument("--optimizer", default='adam')
     parser.add_argument("--weight_decay", default=1e-9, type=float)
-    parser.add_argument("--batch_size", default=256, type=int) #!!change
-    parser.add_argument("--epochs", default=200, type=int)
+    parser.add_argument("--batch_size", default=32, type=int) #!!change
+    parser.add_argument("--epochs", default=2, type=int)
     parser.add_argument("--reg_factor", default=1, type=int)
     parser.add_argument("--adv_factor", default=0.001, type=float)
     parser.add_argument("--early_stop", default=False,  type=bool)
