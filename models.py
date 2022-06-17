@@ -89,9 +89,6 @@ class SoftmaxConstraints(nn.Module):
         return out
     
 
-        self.motifs = Motifs()
-        self.add_channels = AddChannels()
-
 class Motifs(nn.Module):
     def __init__(self):
         super(Motifs, self).__init__()
@@ -105,7 +102,7 @@ class MultIn(nn.Module):
     def __init__(self):
         super(MultIn, self).__init__()
     def forward(self, y, lr):
-        return y*lr
+        return 16*y*lr
     
 class AddChannels(nn.Module):
     def __init__(self):
@@ -346,8 +343,9 @@ class MotifNet(nn.Module):
         for layer in self.res_blocks:
             out = layer(out)
         out = self.conv3(out)
-        out = self.softmax(out)
-        out = self.mult_in(out, x[:,0,...])
+        #out = self.softmax(out)
+        #out = self.mult_in(out, x[:,0,...])
+        #(out[1,...])
         out = self.motifs(out)
         out = self.add_channels(out)
         out = out.unsqueeze(1)
