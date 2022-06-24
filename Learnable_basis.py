@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import numpy as np
 
 # To use the following code, you need to copy them to your "models.py" file.
-# Qidong Yang, 06-24-2022
+# Author: Qidong Yang
+# Last Edit Date: 06-24-2022
 
 
 '''
