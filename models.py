@@ -333,22 +333,25 @@ class MotifNet(nn.Module):
         self.mult_in = MultIn()
         self.motifs = Motifs()
         self.add_channels = AddChannels()
+        self.constraints = constraints
+        if constraints == 'softmax_last':
+            self.constraints_layer = SoftmaxConstraints(upsampling_factor=upsampling_factor)
         
         
     def forward(self, x): 
-        
-        #print(x.shape)
         out = self.conv1(x[:,0,...])
         out = self.conv2(out)  
         for layer in self.res_blocks:
             out = layer(out)
         out = self.conv3(out)
-        #out = self.softmax(out)
-        #out = self.mult_in(out, x[:,0,...])
-        #(out[1,...])
+        if self.constraints == 'softmax_first':
+            out = self.softmax(out)
+            out = self.mult_in(out, x[:,0,...])
         out = self.motifs(out)
         out = self.add_channels(out)
         out = out.unsqueeze(1)
+        if self.constraints == 'softmax_last':
+            out = self.constraints_layer(out, x[:,0,...])
         out = out.unsqueeze(1)
         return out  
         
