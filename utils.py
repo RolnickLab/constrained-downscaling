@@ -2,6 +2,7 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import models
+import Learnable_basis
 from torch.utils.data import DataLoader, TensorDataset
 device = 'cuda'
 
@@ -100,6 +101,8 @@ def load_model(args, discriminator=False):
             model = models.ResNet3Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
         elif args.model == 'motifnet':
             model = models.MotifNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
+        elif args.model == 'motifnet_learnable':
+            model = models.MotifNetLearnBasis(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
         else:
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
     model.to(device)

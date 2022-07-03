@@ -245,7 +245,7 @@ def checkpoint(model, val_loss, best, args):
     print(val_loss, best)
     if val_loss < best:
         checkpoint = {'model': model,'state_dict': model.state_dict()}
-        torch.save(checkpoint, './models/'+args.model_id+'.pth')
+        torch.save(checkpoint, './models/'+args.model_id+str(best)+'.pth')
         
         
 def check_for_early_stopping(val_loss, best, patience_counter, args):
