@@ -13,6 +13,8 @@ device = 'cuda'
 
 def run_training(args, data):
     model = load_model(args)
+    print(model)
+    print('#params:', sum(p.numel() for p in model.parameters()))
     optimizer = get_optimizer(args, model)
     criterion = get_criterion(args)
     criterion_mr = get_criterion(args)
@@ -77,13 +79,13 @@ def run_training(args, data):
             val_loss = validate_model(model, criterion, data[1], best, patience_count, epoch, args)
         val_losses.append(val_loss)
         print('Val loss: {:.5f}'.format(val_loss))
-        checkpoint(model, val_loss, best, args)
+        checkpoint(model, val_loss, best, args, epoch)
         #if args.early_stop:
          #   is_stop, patience_count = check_for_early_stopping(val_loss, best, patience_count, args)
         best = np.minimum(best, val_loss)
         if is_stop:
             break
-    scores = evaluate_model(model, data, args)
+    scores = evaluate_model( data, args)
     print(scores)
     create_report(scores, args)
     #if is_gan(args):
@@ -241,11 +243,11 @@ def compute_gradient_penalty(D, real_samples, fake_samples):
     return gradient_penalty
 
 
-def checkpoint(model, val_loss, best, args):
+def checkpoint(model, val_loss, best, args, epoch):
     print(val_loss, best)
     if val_loss < best:
         checkpoint = {'model': model,'state_dict': model.state_dict()}
-        torch.save(checkpoint, './models/'+args.model_id+str(best)+'.pth')
+        torch.save(checkpoint, './models/'+args.model_id+'.pth')
         
         
 def check_for_early_stopping(val_loss, best, patience_counter, args):
@@ -258,8 +260,11 @@ def check_for_early_stopping(val_loss, best, patience_counter, args):
         is_stop = True 
     return is_stop, patience_counter
 
-def evaluate_model(model, data, args):
+def evaluate_model(data, args, add_string=None):
+    model = load_model(args)
+    load_weights(model, args.model_id)
     model.eval()
+    
     running_mse = 0 
     running_ssim = 0
     running_mae = 0
@@ -310,7 +315,11 @@ def evaluate_model(model, data, args):
     mae = running_mae/len(data)
     ssim = running_ssim/len(data)
     psnr = calculate_pnsr(mse, data[4])
-    torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_fullprediction.pt')                                      
+    if add_string:
+        torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+add_string+'.pt')
+    else:
+        torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_fullprediction.pt')
+        
     return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
 
 
@@ -389,6 +398,12 @@ def save_dict(dictionary, args, add_string):
         # write every key and value to file
         w.writerow([key, val])
 
+def load_weights(model, model_id):
+    PATH = '/home/harder/constraint_generative_ml/models/'+model_id+'.pth'
+    checkpoint = torch.load(PATH) # ie, model_best.pth.tar
+    model.load_state_dict(checkpoint['state_dict'])
+    model.to('cuda')
+    return model
 
 
 

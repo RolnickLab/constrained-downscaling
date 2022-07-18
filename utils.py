@@ -11,8 +11,12 @@ def load_data(args):
     target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
     #input_train = input_train[:4000,...]
     #target_train = target_train[:4000,...]
-    input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
-    target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
+    if args.test:
+        input_val = torch.load('./data/test/'+args.dataset+'/input_test.pt')
+        target_val = torch.load('./data/test/'+args.dataset+'/target_test.pt')
+    else:
+        input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
+        target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
     #define dimesions
     global train_shape_in , train_shape_out, val_shape_in, val_shape_in
     train_shape_in = input_train.shape
@@ -103,6 +107,8 @@ def load_model(args, discriminator=False):
             model = models.MotifNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
         elif args.model == 'motifnet_learnable':
             model = models.MotifNetLearnBasis(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
+        elif args.model == 'mixture':
+            model = models.MixtureModel(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
         else:
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
     model.to(device)

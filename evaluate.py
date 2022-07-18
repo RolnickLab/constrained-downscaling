@@ -2,16 +2,16 @@ import torch
 import argparse
 from training import evaluate_double_model, create_report, evaluate_model
 import models
-from utils import load_data
+from utils import load_data,load_model
 
 def add_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='dataset20', help="choose a data set to use")
+    parser.add_argument("--dataset", default='dataset24', help="choose a data set to use")
     parser.add_argument("--scale", default='none', help="standard, minmax, none")
-    parser.add_argument("--model", default='resnet2_exp1_act')
-    parser.add_argument("--model_id", default='resnet_lr_mr_no_scale')
-    parser.add_argument("--model_id2", default='resnet_mr_hr_no_scale')
-    parser.add_argument("--number_channels", default=32, type=int)
+    parser.add_argument("--model", default='resnet2')
+    parser.add_argument("--model_id", default='aaai_symp_cnn_softmax_2_5')
+    parser.add_argument("--model_id2", default='aaai_symp_cnn_sum_2_4')
+    parser.add_argument("--number_channels", default=64, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)
     parser.add_argument("--upsampling_factor", default=2, type=int)
     parser.add_argument("--noise", default=False)
@@ -32,10 +32,13 @@ def add_arguments():
     parser.add_argument("--exp_factor", default=1, type=float)
     #parser.add_argument("--time", default=True, type=bool)
     #parser.add_argument("--data_size", default=2035, type=int)
-    parser.add_argument("--mean", default=19, type=float)
-    parser.add_argument("--std", default=16, type=float)
-    parser.add_argument("--max", default=150, type=float)
-    parser.add_argument("--double", default=True, type=bool)
+    parser.add_argument("--mean", default=21.4, type=float)
+    parser.add_argument("--std", default=17.3, type=float)
+    parser.add_argument("--max", default=135, type=float)
+    parser.add_argument("--double", default=False, type=bool)
+    parser.add_argument("--test", default=True, type=bool)
+    parser.add_argument("--constraints", default='softmax')
+    parser.add_argument("--mr", default=False, type=bool)
     return parser.parse_args()
 
 
@@ -54,15 +57,15 @@ def main(args):
         
         add_string = args.model_id + '_and_' + args.model_id2
     else:
-        model1 = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
+        #model1 = load_model(args)
 
-        model1 = load_weights(model1, args.model_id)
+        #model1 = load_weights(model1, args.model_id)
 
-
-        scores = evaluate_model(model1, data, args)
+        add_string = '_test'
+        scores = evaluate_model( data, args, add_string)
 
         
-        add_string = args.model_id + '_evaluate_training' 
+        #add_string = args.model_id + '_evaluate_training' 
         
     create_report(scores, args, add_string)
     

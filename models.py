@@ -19,7 +19,7 @@ Learnable Basis Module
 
 
 class BasisGenerator(nn.Module):
-    def __init__(self, shape=(64, 8, 8), positivity=True, device='cuda'):
+    def __init__(self, shape=(16, 4, 4), positivity=True, device='cuda'):
         super(BasisGenerator, self).__init__()
 
         self.shape = shape
@@ -48,7 +48,7 @@ class BasisGenerator(nn.Module):
         # Normalization
         sums = torch.sum(basis, dim=(1, 2))
         basis = basis / sums.reshape((-1, 1, 1))
-
+        
         return basis
 
 
@@ -59,6 +59,254 @@ Note: the following code serves as an example to show how to use the above learn
 which means the following code has not been tested yet!!
 
 '''
+
+class MixtureModel(nn.Module):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1):
+        super(MixtureModel, self).__init__()
+        ################
+        ######Motif model
+        ################
+        # First layer
+        self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+
+        # Residual blocks
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlock(number_channels, number_channels))
+
+        # Second conv layer post residual blocks
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+
+
+        # Next layer after upper sampling
+        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, upsampling_factor**2, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+
+        # Constraint layers
+        self.softmax = nn.Softmax(dim=1)
+        self.mult_in = MultIn(factor=upsampling_factor**2)
+        self.basis_generator = BasisGenerator(shape=(upsampling_factor**2-20, upsampling_factor, upsampling_factor))
+        self.constraints_layer = SoftmaxConstraints(upsampling_factor=upsampling_factor)
+        
+        ###############
+        ####Successive model
+        ##################
+        #PART I
+        self.conv11 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlock(number_channels, number_channels))
+        self.conv12 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        #upsampling
+        self.up1 = nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2)
+        self.conv13 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.conv14 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)      
+        
+        self.is_constraints = False
+        if constraints == 'softmax':
+            self.constraints = SoftmaxConstraints(upsampling_factor=2)
+            self.is_constraints = True
+        elif constraints == 'enforce_op':
+            self.constraints = EnforcementOperator(upsampling_factor=2)
+            self.is_constraints = True
+            
+       
+            
+            
+        #PART II
+        self.conv21 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.res_blocks2 = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks2.append(ResidualBlock(number_channels, number_channels))
+        self.conv22 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        #upsampling
+        self.up2 = nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2)
+        self.conv23 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.conv24 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)
+        if constraints == 'softmax':
+            self.constraints2 = SoftmaxConstraints(upsampling_factor=2)
+        elif constraints == 'enforce_op':
+            self.constraints2 = EnforcementOperator(upsampling_factor=2)
+            
+            
+         #PART III
+        self.conv31 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.res_blocks3 = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks3.append(ResidualBlock(number_channels, number_channels))
+        self.conv32 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        #upsampling
+        self.up3 = nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2)
+        self.conv33 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.conv34 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)
+        if constraints == 'softmax':
+            self.constraints3 = SoftmaxConstraints(upsampling_factor=2)
+        elif constraints == 'enforce_op':
+            self.constraints3 = EnforcementOperator(upsampling_factor=2)
+ 
+                 
+    
+        
+        ############
+        ####Gating
+        ##########
+        
+         # First layer
+        self.conv_gate1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+
+        
+        # Second conv layer post residual blocks
+        self.conv_gate2 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        
+        self.upsampling = nn.ModuleList()
+        for k in range(3):
+            self.upsampling.append(nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2) )
+
+        # Next layer after upper sampling
+        self.conv_gate3 = nn.Sequential(nn.Conv2d(number_channels, 1, kernel_size=3, stride=1, padding=1), nn.Sigmoid())
+    def forward(self, x):
+        
+        ################
+        ######Motif model
+        ################
+        out = self.conv1(x[:, 0, ...])
+        out = self.conv2(out)
+
+        for layer in self.res_blocks:
+            out = layer(out)
+
+        out = self.conv3(out)
+
+        # Softmax constraining
+        #out = self.softmax(out)
+        #print('after softmax', out[0,:,0,0].sum())
+        # (n_batch, 16, 32, 32)
+        #out = self.mult_in(out, x[:, 0, ...])
+        
+        #print('input', x[0,0,0,0,0])
+        #print('after mult', out[0,:,0,0].mean())
+        # (n_batch, 16, 32, 32)
+        # Generate basis
+        basis = self.basis_generator()
+        # (16, 4, 4)
+
+        # Kron operation
+        output = Variable(torch.zeros((out.shape[0], out.shape[1], out.shape[2] * basis.shape[-2], out.shape[3] * basis.shape[-1])), requires_grad=True).to('cuda')
+        for ii in range(basis.shape[0]):
+            output[:, ii, :, :] = torch.kron(out[:, ii, :, :], basis[ii, :, :])
+        # (n_batch, 16, 32*4, 32*4)
+        #print(basis[0,:,:].sum())
+        # Add channels
+        output = torch.sum(output, dim=1)
+        output = output.unsqueeze(1)
+        output = self.constraints_layer(output, x[:,0,...])
+        output_motif = output.unsqueeze(1)
+        #print(output.shape)
+        
+        ###############
+        ####Successive model
+        ##################
+        
+       
+        #part 1
+        
+        out = self.conv11(x[:,0,...])
+        out = self.up1(out)
+        out = self.conv12(out)    
+        for layer in self.res_blocks:
+            out = layer(out)
+        out = self.conv13(out)
+        mr1 = self.conv14(out)
+        if self.is_constraints:
+            mr1 = self.constraints(mr1, x[:,0,...])
+        #part 2
+        out = self.conv21(mr1)
+        out = self.up2(out)
+        out = self.conv22(out)    
+        for layer in self.res_blocks2:
+            out = layer(out)
+        out = self.conv23(out)
+        mr2 = self.conv24(out)
+        if self.is_constraints:
+            mr2 = self.constraints2(mr2, mr1)
+            
+        #part 3
+        out = self.conv31(mr2)
+        out = self.up3(out)
+        out = self.conv32(out)    
+        for layer in self.res_blocks3:
+            out = layer(out)
+        out = self.conv33(out)
+        out = self.conv34(out)
+        if self.is_constraints:
+            out = self.constraints3(out, mr2)
+        output_succ = out.unsqueeze(1)
+        
+        ###
+        ##gating
+        ###g
+        gate_out = self.conv_gate1(x[:,0,...])
+        gate_out = self.conv_gate2(gate_out)
+        for layer in self.upsampling:
+            gate_out = layer(gate_out)
+        gate_out = self.conv_gate3(gate_out)
+        gate_out = gate_out.unsqueeze(1)
+        
+        #print(gate_out.shape, output_motif.shape, output_succ.shape)
+        return gate_out*output_motif+(1-gate_out)*output_succ
+
+class MotifNetLearnBasisSucc(nn.Module):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1):
+        super(MotifNetLearnBasisSucc, self).__init__()
+
+        # First layer
+        self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+
+        # Residual blocks
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlock(number_channels, number_channels))
+
+        # Second conv layer post residual blocks
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+
+        
+        # Next layer after upper sampling
+        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, upsampling_factor**2, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+
+        # Constraint layers
+        self.softmax = nn.Softmax(dim=1)
+        self.mult_in = MultIn(factor=upsampling_factor**2)
+        self.basis_generator = BasisGenerator(shape=(upsampling_factor**2, upsampling_factor, upsampling_factor))
+
+    def forward(self, x):
+        ##first part of succesive approach
+        out = self.conv1(x[:, 0, ...])
+        out = self.conv2(out)
+        for layer in self.res_blocks:
+            out = layer(out)
+        out = self.conv3(out)
+        # Softmax constraining
+        out = self.softmax(out)
+        out = self.mult_in(out, x[:, 0, ...])
+        basis = self.basis_generator()
+        output = Variable(torch.zeros((out.shape[0], out.shape[1], out.shape[2] * basis.shape[-2], out.shape[3] * basis.shape[-1])), requires_grad=True).to('cuda')
+        for ii in range(basis.shape[0]):
+            output[:, ii, :, :] = torch.kron(out[:, ii, :, :], basis[ii, :, :])
+        # Add channels
+        output = torch.sum(output, dim=1)
+        output = output.unsqueeze(1)
+        
+        
+        
+        output = output.unsqueeze(1)
+
+        return output
 
 
 class MotifNetLearnBasis(nn.Module):
@@ -87,9 +335,14 @@ class MotifNetLearnBasis(nn.Module):
 
         # Constraint layers
         self.softmax = nn.Softmax(dim=1)
-        self.mult_in = MultIn()
+        self.mult_in = MultIn(factor=upsampling_factor**2)
+        self.sum_channels = AddChannels()
         self.basis_generator = BasisGenerator(shape=(upsampling_factor**2, upsampling_factor, upsampling_factor))
-
+        if constraints == 'softmax_last':
+            self.constraints_layer = SoftmaxConstraints(upsampling_factor=upsampling_factor)
+        elif constraints == 'sum_last':
+            self.constraints_layer = MultDownscaleConstraints(upsampling_factor=upsampling_factor)
+        self.constraints = constraints
     def forward(self, x):
 
         out = self.conv1(x[:, 0, ...])
@@ -101,9 +354,16 @@ class MotifNetLearnBasis(nn.Module):
         out = self.conv3(out)
 
         # Softmax constraining
-        out = self.softmax(out)
-        # (n_batch, 16, 32, 32)
-        out = self.mult_in(out, x[:, 0, ...])
+        if self.constraints == 'softmax_first':
+            out = self.softmax(out)
+            out = self.mult_in(out, x[:,0,...])
+        elif self.constraints == 'sum_first':
+            sum_c = self.sum_channels(out)
+            out = out/sum_c
+            out = self.mult_in(out, x[:,0,...])
+        
+        #print('input', x[0,0,0,0,0])
+        #print('after mult', out[0,:,0,0].mean())
         # (n_batch, 16, 32, 32)
         # Generate basis
         basis = self.basis_generator()
@@ -114,12 +374,14 @@ class MotifNetLearnBasis(nn.Module):
         for ii in range(basis.shape[0]):
             output[:, ii, :, :] = torch.kron(out[:, ii, :, :], basis[ii, :, :])
         # (n_batch, 16, 32*4, 32*4)
-
+        #print(basis[0,:,:].sum())
         # Add channels
         output = torch.sum(output, dim=1)
         output = output.unsqueeze(1)
+        if self.constraints == 'softmax_last' or self.constraints == 'sum_last':
+            output = self.constraints_layer(output, x[:,0,...])
         output = output.unsqueeze(1)
-
+        #print(output.shape)
         return output
 
 
@@ -216,10 +478,11 @@ class Motifs(nn.Module):
         return out
         
 class MultIn(nn.Module):
-    def __init__(self):
+    def __init__(self, factor):
         super(MultIn, self).__init__()
+        self.factor = factor
     def forward(self, y, lr):
-        return 16*y*lr
+        return y*lr*self.factor
     
 class AddChannels(nn.Module):
     def __init__(self):
