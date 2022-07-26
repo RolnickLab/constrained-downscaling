@@ -8,15 +8,15 @@ device = 'cuda'
 
 def load_data(args):
     input_train = torch.load('./data/train/'+args.dataset+'/input_train.pt')
-    target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
+    target_train = torch.load('./data/train/dataset28/target_train.pt')
     #input_train = input_train[:4000,...]
     #target_train = target_train[:4000,...]
     if args.test:
         input_val = torch.load('./data/test/'+args.dataset+'/input_test.pt')
-        target_val = torch.load('./data/test/'+args.dataset+'/target_test.pt')
+        target_val = torch.load('./data/test/dataset28/target_test.pt')
     else:
         input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
-        target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
+        target_val = torch.load('./data/val/dataset28/target_val.pt')
     #define dimesions
     global train_shape_in , train_shape_out, val_shape_in, val_shape_in
     train_shape_in = input_train.shape

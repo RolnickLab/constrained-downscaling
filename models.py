@@ -462,7 +462,7 @@ class SoftmaxConstraints(nn.Module):
         self.upsampling_factor = upsampling_factor
         self.exp_factor = exp_factor
     def forward(self, y, lr):
-        y = torch.exp(y/self.exp_factor)
+        y = torch.exp(y*self.exp_factor)
         sum_y = self.pool(y)
         out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
@@ -766,6 +766,20 @@ class ResNet2Up(nn.Module):
         elif constraints == 'enforce_op':
             self.constraints = EnforcementOperator(upsampling_factor=2)
             self.is_constraints = True
+        elif constraints == 'mult':
+            self.constraints = MultDownscaleConstraints(upsampling_factor=2)
+            self.is_constraints = True
+            
+        self.is_single_constraints = False
+        if constraints == 'softmax_single':
+            self.constraints = SoftmaxConstraints(upsampling_factor=4)
+            self.is_single_constraints = True
+        elif constraints == 'enforce_op_single':
+            self.constraints = EnforcementOperator(upsampling_factor=4)
+            self.is_single_constraints = True
+        elif constraints == 'mult_single':
+            self.constraints = MultDownscaleConstraints(upsampling_factor=4)
+            self.is_single_constraints = True
             
         #PART II
         self.conv21 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
@@ -782,6 +796,8 @@ class ResNet2Up(nn.Module):
             self.constraints2 = SoftmaxConstraints(upsampling_factor=2)
         elif constraints == 'enforce_op':
             self.constraints2 = EnforcementOperator(upsampling_factor=2)
+        elif constraints == 'mult':
+            self.constraints2 = MultDownscaleConstraints(upsampling_factor=2)
  
         self.output_mr = output_mr             
     def forward(self, x, mr_in=None):
@@ -805,6 +821,8 @@ class ResNet2Up(nn.Module):
         out = self.conv24(out)
         if self.is_constraints:
             out = self.constraints2(out, mr)
+        if self.is_single_constraints:
+            out = self.constraints(out, x[:,0,...])
         if self.output_mr:
             return out.unsqueeze(1), mr.unsqueeze(1)
         else:
@@ -833,6 +851,8 @@ class ResNet3Up(nn.Module):
         elif constraints == 'enforce_op':
             self.constraints = EnforcementOperator(upsampling_factor=2)
             self.is_constraints = True
+        elif constraints == 'mult':
+            self.constraints = MultDownscaleConstraints(upsampling_factor=2)
             
        
             
@@ -852,6 +872,8 @@ class ResNet3Up(nn.Module):
             self.constraints2 = SoftmaxConstraints(upsampling_factor=2)
         elif constraints == 'enforce_op':
             self.constraints2 = EnforcementOperator(upsampling_factor=2)
+        elif constraints == 'mult':
+            self.constraints2 = MultDownscaleConstraints(upsampling_factor=2)
             
             
          #PART III
@@ -869,6 +891,8 @@ class ResNet3Up(nn.Module):
             self.constraints3 = SoftmaxConstraints(upsampling_factor=2)
         elif constraints == 'enforce_op':
             self.constraints3 = EnforcementOperator(upsampling_factor=2)
+        elif constraints == 'mult':
+            self.constraints3 = MultDownscaleConstraints(upsampling_factor=2)
  
         self.output_mr = output_mr             
     def forward(self, x, mr_in=None):

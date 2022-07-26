@@ -6,11 +6,11 @@ from utils import load_data,load_model
 
 def add_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='dataset24', help="choose a data set to use")
-    parser.add_argument("--scale", default='none', help="standard, minmax, none")
+    parser.add_argument("--dataset", default='dataset29', help="choose a data set to use")
+    parser.add_argument("--scale", default='minmax_fixed', help="standard, minmax, none")
     parser.add_argument("--model", default='resnet2')
-    parser.add_argument("--model_id", default='aaai_symp_cnn_softmax_2_5')
-    parser.add_argument("--model_id2", default='aaai_symp_cnn_sum_2_4')
+    parser.add_argument("--model_id", default='nu_aaai_symp_cnn_softmax_minmax_long_2_0')
+    parser.add_argument("--model_id2", default='aaai_symp_cnn_sum_2_0')
     parser.add_argument("--number_channels", default=64, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)
     parser.add_argument("--upsampling_factor", default=2, type=int)
