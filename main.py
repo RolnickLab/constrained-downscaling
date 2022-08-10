@@ -6,19 +6,19 @@ import argparse
 def add_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default='dataset28', help="choose a data set to use")
-    parser.add_argument("--scale", default='minmax_fixed', help="standard, minmax, none")
-    parser.add_argument("--model", default='res_2up')
-    parser.add_argument("--model_id", default='nu_aaai_symp_cnn_softmaxsingle_long_4_3')
+    parser.add_argument("--scale", default='standard_fixed', help="standard, minmax, none")
+    parser.add_argument("--model", default='motifnet_learnable')
+    parser.add_argument("--model_id", default='motifnet_softplus_sumlast_4x_mmscale_lr-5_l2')
     parser.add_argument("--number_channels", default=64, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)#""!!change
     parser.add_argument("--upsampling_factor", default=4, type=int)
     parser.add_argument("--noise", default=False)
-    parser.add_argument("--constraints", default='softmax_single')
-    parser.add_argument("--lr", default=0.001, help="learning rate", type=float)
+    parser.add_argument("--constraints", default='sum_last')
+    parser.add_argument("--lr", default=0.00001, help="learning rate", type=float)
     parser.add_argument("--loss", default='mse')
     parser.add_argument("--optimizer", default='adam')
     parser.add_argument("--weight_decay", default=1e-9, type=float)
-    parser.add_argument("--batch_size", default=256, type=int) #!!change
+    parser.add_argument("--batch_size", default=512, type=int) #!!change
     parser.add_argument("--epochs", default=200, type=int)
     parser.add_argument("--reg_factor", default=1, type=int)
     parser.add_argument("--adv_factor", default=0.0001, type=float)
@@ -32,6 +32,7 @@ def add_arguments():
     parser.add_argument("--mr", default=False, type=bool)
     parser.add_argument("--alpha", default=0.5, type=float)
     parser.add_argument("--test", default=False, type=bool)
+    parser.add_argument("--l2_reg", default=False, type=bool)
     
     
     return parser.parse_args()

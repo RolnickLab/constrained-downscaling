@@ -6,14 +6,14 @@ from utils import load_data,load_model
 
 def add_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='dataset29', help="choose a data set to use")
+    parser.add_argument("--dataset", default='dataset28', help="choose a data set to use")
     parser.add_argument("--scale", default='minmax_fixed', help="standard, minmax, none")
-    parser.add_argument("--model", default='resnet2')
-    parser.add_argument("--model_id", default='nu_aaai_symp_cnn_softmax_minmax_long_2_0')
-    parser.add_argument("--model_id2", default='aaai_symp_cnn_sum_2_0')
+    parser.add_argument("--model", default='motifnet_learnable')
+    parser.add_argument("--model_id", default='motifnet_exp_sumlast_4x_mmscale_lr-4')
+    parser.add_argument("--model_id2", default='nu_aaai_symp_cnn_softmaxsingle_long_4_2')
     parser.add_argument("--number_channels", default=64, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)
-    parser.add_argument("--upsampling_factor", default=2, type=int)
+    parser.add_argument("--upsampling_factor", default=4, type=int)
     parser.add_argument("--noise", default=False)
     parser.add_argument("--downscale_constraints", default=True, type=bool)
     parser.add_argument("--softmax_constraints", default=True, type=bool)
@@ -22,7 +22,7 @@ def add_arguments():
     parser.add_argument("--loss", default='mse')
     parser.add_argument("--optimizer", default='adam')
     parser.add_argument("--weight_decay", default=1e-9, type=float)
-    parser.add_argument("--batch_size", default=64, type=int)
+    parser.add_argument("--batch_size", default=32, type=int)
     parser.add_argument("--epochs", default=100, type=int)
     parser.add_argument("--reg_factor", default=1, type=int)
     parser.add_argument("--adv_factor", default=0.001, type=float)
@@ -36,9 +36,11 @@ def add_arguments():
     parser.add_argument("--std", default=17.3, type=float)
     parser.add_argument("--max", default=135, type=float)
     parser.add_argument("--double", default=False, type=bool)
+    parser.add_argument("--triple", default=False, type=bool)
     parser.add_argument("--test", default=True, type=bool)
-    parser.add_argument("--constraints", default='softmax')
+    parser.add_argument("--constraints", default='sum_last')
     parser.add_argument("--mr", default=False, type=bool)
+    parser.add_argument("--l2_reg", default=False, type=bool)
     return parser.parse_args()
 
 
@@ -46,16 +48,18 @@ def main(args):
 
     data = load_data(args)
     if args.double:
-        model2 = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
-        model1 = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints)
+        model2 = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=4, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
+        model1 = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=2, noise=args.noise, constraints=args.constraints)
 
         model1 = load_weights(model1, args.model_id)
         model2 = load_weights(model2, args.model_id2)
+        
+        add_string = args.model_id + '_and_' + args.model_id2+'_test'
 
-        scores = evaluate_double_model(model1, model2, data, args)
+        scores = evaluate_double_model(model1, model2, data, args, add_string)
 
         
-        add_string = args.model_id + '_and_' + args.model_id2
+        
     else:
         #model1 = load_model(args)
 

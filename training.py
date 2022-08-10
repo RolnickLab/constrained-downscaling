@@ -18,8 +18,10 @@ def run_training(args, data):
     optimizer = get_optimizer(args, model)
     criterion = get_criterion(args)
     criterion_mr = get_criterion(args)
+    criterion_mr2 = get_criterion(args)
     if is_gan(args):   
         discriminator_model = load_model(args, discriminator=True)
+        print('#params:', sum(p.numel() for p in discriminator_model.parameters()))
         optimizer_discr = get_optimizer(args, discriminator_model)
         criterion_discr = get_criterion(args, discriminator=True)
         
@@ -49,7 +51,7 @@ def run_training(args, data):
                 running_loss += loss
                 running_discr_loss += discr_loss
             else:
-                loss = optimizer_step(model, optimizer, criterion, inputs, targets, data[0], args, criterion_mr)
+                loss = optimizer_step(model, optimizer, criterion, inputs, targets, data[0], args, criterion_mr, criterion_mr2)
 
                 running_loss += loss
                 #print('train:',loss)
@@ -100,16 +102,25 @@ def run_training(args, data):
         
     
 
-def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, criterion_mr=None, discriminator=False):
+def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, criterion_mr=None, criterion_mr2=None, discriminator=False):
     optimizer.zero_grad()
     if args.mr:
-        outputs, mr = model(inputs)
-        mr_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
-        loss_mr = criterion_mr(mr, mr_target.unsqueeze(1))
+        mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+        mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+        outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+        
+        loss_mr1 = criterion_mr(mr1, mr1_target.unsqueeze(1))
+        loss_mr2 = criterion_mr2(mr2, mr2_target.unsqueeze(1))
         loss_hr = criterion(outputs, targets)
-        loss = args.alpha*loss_hr+ (1-args.alpha)*loss_mr
+        loss = 0.33*loss_mr1 + 0.33*loss_mr2 + 0.33*loss_hr
+        #loss = args.alpha*loss_hr+ (1-args.alpha)*loss_mr
+    elif args.l2_reg:
+        outputs, coeff = model(inputs)
+        loss = args.alpha*criterion(outputs, targets) + (1-args.alpha)*1/torch.mean(coeff.norm(dim=1, p=2))
+        
     else:
         outputs = model(inputs)
+        #print(outputs.shape, targets.shape)
         loss = criterion(outputs, targets)
     loss.backward()
     optimizer.step()  
@@ -118,7 +129,7 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, c
     return loss.item()#, loss_mr, loss_hr
     
     
-def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, tepoch, args):
+def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, tepoch, args, criterion_mr=None):
     optimizer_discr.zero_grad()
     if args.noise:
         if False:
@@ -130,10 +141,25 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
         else:
             z = np.random.normal( size=[inputs.shape[0], 100])
             z = torch.Tensor(z).to(device)
+            if args.mr:
+                outputs, mr = model(inputs, z)
+                mr_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                loss_mr = criterion_mr(mr, mr_target.unsqueeze(1))
+                loss_hr = criterion(outputs, targets)
+                loss = args.alpha*loss_hr+ (1-args.alpha)*loss_mr
+            else:
 
-            outputs = model(inputs, z)
+                outputs = model(inputs, z)
     else:
-        outputs = model(inputs)
+        if args.mr:
+            outputs, mr = model(inputs)
+            mr_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+            loss_mr = criterion_mr(mr, mr_target.unsqueeze(1))
+            loss_hr = criterion(outputs, targets)
+            loss = args.alpha*loss_hr+ (1-args.alpha)*loss_mr
+        else:
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
     batch_size = inputs.shape[0]
     if False:
         real_label = torch.full((batch_size, args.nsteps_in, 1), 1, dtype=outputs.dtype).to(device)
@@ -170,7 +196,7 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
     loss += args.adv_factor * adversarial_loss
     loss.backward()
     optimizer.step()       
-    tepoch.set_postfix(loss=loss.item())
+    #tepoch.set_postfix(loss=loss.item())
     return loss.item(), d_loss.item()
 
     
@@ -194,10 +220,17 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
                     z = np.random.normal( size=[inputs.shape[0], 100])
                     z = torch.Tensor(z).to(device)
 
-                    outputs = model(inputs, z)
+                    if args.mr:
+                        outputs, mr = model(inputs, z)
+                        
+                    else:
+                        outputs = model(inputs, z)
             else:
                 if args.mr:
-                    outputs, mr = model(inputs)
+                    mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+                    mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                    outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+                    #outputs, mr, mr = model(inputs)
                 else:
                     outputs = model(inputs)
             reg_loss = criterion(outputs, targets)
@@ -213,7 +246,12 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
             loss += args.adv_factor * adversarial_loss
         else:
             if args.mr:
-                outputs, mr = model(inputs)
+                mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+                mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+                #outputs, mr, mr = model(inputs)
+            elif args.l2_reg:
+                outputs, coeff = model(inputs)
             else:
                 outputs = model(inputs)
             loss = criterion(outputs, targets)  
@@ -323,7 +361,7 @@ def evaluate_model(data, args, add_string=None):
     return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
 
 
-def evaluate_double_model(model1, model2, data, args):
+def evaluate_double_model(model1, model2, data, args, add_string=None):
     model1.eval()
     model2.eval()
     running_mse = 0    
@@ -369,7 +407,7 @@ def evaluate_double_model(model1, model2, data, args):
     ssim = running_ssim/len(data)
     psnr = 0
     psnr = calculate_pnsr(mse, data[4])
-    torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+'_fullprediction.pt')                                      
+    torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+add_string+'.pt')                                      
     return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
                                             
 

@@ -9,6 +9,7 @@ device = 'cuda'
 def load_data(args):
     input_train = torch.load('./data/train/'+args.dataset+'/input_train.pt')
     target_train = torch.load('./data/train/dataset28/target_train.pt')
+    #target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
     #input_train = input_train[:4000,...]
     #target_train = target_train[:4000,...]
     if args.test:
@@ -17,6 +18,7 @@ def load_data(args):
     else:
         input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
         target_val = torch.load('./data/val/dataset28/target_val.pt')
+        #target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
     #define dimesions
     global train_shape_in , train_shape_out, val_shape_in, val_shape_in
     train_shape_in = input_train.shape
@@ -79,12 +81,14 @@ def load_model(args, discriminator=False):
         if args.noise:
             if args.model == 'conv_gru':
                 model = models.ConvGRUGenerator()
+            elif args.model == 'gan_4x':
+                model = models.ResNet2UpNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
             else:
                 model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
         elif args.model == 'mr_constr':
             model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=1, output_mr=args.mr)
         elif args.model == 'conv_gru_det':
-            model = models.ConvGRUGeneratorDet()
+            model = models.ConvGRUGeneratorDet( number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, time_steps=3, constraints=args.constraints)
         elif args.model == 'conv_gru_det_con':
             model = models.ConvGRUGeneratorDetCon()
         elif args.model == 'frame_gru':
@@ -92,7 +96,7 @@ def load_model(args, discriminator=False):
         elif args.model == 'voxel_flow':
             model = models.VoxelFlow()
         elif args.model == 'time_end_to_end':
-            model = models.TimeEndToEndModel()
+            model = models.TimeEndToEndModel( number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, time_steps=3, constraints=args.constraints)
         elif args.model == 'resnet_new':
             model = models.CNNUp()
         elif args.model == 'esrgan':
@@ -101,14 +105,20 @@ def load_model(args, discriminator=False):
             model = models.SRGANGenerator(n_residual_blocks=args.number_residual_blocks, upsample_factor=args.upsampling_factor)
         elif args.model == 'res_2up':
             model = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
+        elif args.model == 'res_4up':
+            model = models.ResNet4Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
         elif args.model == 'res_3up':
-            model = models.ResNet3Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
+            model = models.ResNet3Up()
+            #model = models.ResNet3Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
         elif args.model == 'motifnet':
             model = models.MotifNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
         elif args.model == 'motifnet_learnable':
-            model = models.MotifNetLearnBasis(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
+            model = models.MotifNetLearnBasis(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, l2_reg=args.l2_reg)
         elif args.model == 'mixture':
             model = models.MixtureModel(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
+        elif args.model == 'gan':
+            model = models.ResNet3Up()
+            #model = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
         else:
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
     model.to(device)
@@ -153,6 +163,8 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
 
 def is_gan(args):
     if args.model == 'gan':
+        return True
+    if args.model == 'gan_4x':
         return True
     elif args.model == 'conv_gru':
         return True
