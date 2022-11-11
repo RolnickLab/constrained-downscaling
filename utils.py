@@ -8,16 +8,16 @@ device = 'cuda'
 
 def load_data(args):
     input_train = torch.load('./data/train/'+args.dataset+'/input_train.pt')
-    target_train = torch.load('./data/train/dataset28/target_train.pt')
-    #target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
+    #target_train = torch.load('./data/train/dataset28/target_train.pt')
+    target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
     #input_train = input_train[:4000,...]
     #target_train = target_train[:4000,...]
     if args.test:
         input_val = torch.load('./data/test/'+args.dataset+'/input_test.pt')
-        target_val = torch.load('./data/test/dataset28/target_test.pt')
+        target_val = torch.load('./data/test/'+args.dataset+'/target_test.pt')
     else:
         input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
-        target_val = torch.load('./data/val/dataset28/target_val.pt')
+        target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
         #target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
     #define dimesions
     global train_shape_in , train_shape_out, val_shape_in, val_shape_in
@@ -28,7 +28,13 @@ def load_data(args):
     #mean, std, max
     mean = target_train.mean()
     std = target_train.std()
-    max_val = target_train.max()
+    global max_val, min_val
+   
+    max_val = torch.zeros((args.dim_channels,1))
+    min_val = torch.zeros((args.dim_channels,1))
+    for i in range(args.dim_channels):
+        max_val[i] = target_train[:,0,i,...].max()
+        min_val[i] = target_train[:,0,i,...].min()
     #transform data
     if args.scale == 'standard':          
         input_train = (input_train - mean)/std
@@ -41,10 +47,11 @@ def load_data(args):
         target_train = (target_train - args.mean)/args.std
         target_val = (target_val - args.mean)/args.std  
     elif args.scale == 'minmax':
-        input_train = input_train /max_val
-        target_train = target_train /max_val
-        input_val = input_val/max_val
-        target_val = target_val/max_val
+        for i in range(args.dim_channels):
+            input_train[:,0,i,...] = (input_train[:,0,i,...]-min_val[i]) /(max_val[i]-min_val[i])
+            target_train[:,0,i,...] = (target_train[:,0,i,...] -min_val[i])/(max_val[i]-min_val[i])
+            input_val[:,0,i,...] = (input_val[:,0,i,...]-min_val[i])/(max_val[i]-min_val[i])
+            target_val[:,0,i,...] = (target_val[:,0,i,...]-min_val[i])/(max_val[i]-min_val[i])
     elif args.scale == 'minmax_fixed':
         input_train = input_train /args.max
         target_train = target_train /args.max
@@ -117,10 +124,9 @@ def load_model(args, discriminator=False):
         elif args.model == 'mixture':
             model = models.MixtureModel(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
         elif args.model == 'gan':
-            model = models.ResNet3Up()
-            #model = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
+            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels)
         else:
-            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
+            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels)
     model.to(device)
     return model
 
@@ -134,6 +140,17 @@ def get_criterion(args, discriminator=False):
     else:
         criterion = nn.MSELoss()
     return criterion
+
+def mass_loss(output, true_value, args):
+    ds_out = torch.nn.functional.avg_pool2d(output[:,0,0,:,:], args.upsampling_factor)
+    ds_true = torch.nn.functional.avg_pool2d(true_value[:,0,0,:,:], args.upsampling_factor)
+    return torch.nn.functional.mse_loss(ds_out, ds_true)
+
+def get_loss(output, true_value, args):
+    if args.loss == 'mass_constraints':
+        return args.alpha*torch.nn.functional.mse_loss(output, true_value) + (1-args.alpha)*mass_loss(output, true_value, args)
+    else:
+        return torch.nn.functional.mse_loss(output, true_value)
     
 def process_for_training(inputs, targets): 
     inputs = inputs.to(device)            
@@ -148,8 +165,9 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
         outputs = outputs*args.std+args.mean
         targets = targets*args.std+args.mean 
     elif args.scale == 'minmax':
-        outputs = outputs*max_val         
-        targets = targets*max_val
+        for i in range(args.dim_channels):
+            outputs[:,0,i,...] = outputs[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device) 
+            targets[:,0,i,...] = targets[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device)
     elif args.scale == 'minmax_fixed':
         outputs = outputs*args.max         
         targets = targets*args.max

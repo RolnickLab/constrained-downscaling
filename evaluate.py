@@ -3,13 +3,14 @@ import argparse
 from training import evaluate_double_model, create_report, evaluate_model
 import models
 from utils import load_data,load_model
+from scoring import main_scoring
 
 def add_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default='dataset28', help="choose a data set to use")
+    parser.add_argument("--dataset", default='dataset34', help="choose a data set to use")
     parser.add_argument("--scale", default='minmax_fixed', help="standard, minmax, none")
-    parser.add_argument("--model", default='motifnet_learnable')
-    parser.add_argument("--model_id", default='motifnet_exp_sumlast_4x_mmscale_lr-4')
+    parser.add_argument("--model", default='resnet2')
+    parser.add_argument("--model_id", default='resnet2_ood_test')
     parser.add_argument("--model_id2", default='nu_aaai_symp_cnn_softmaxsingle_long_4_2')
     parser.add_argument("--number_channels", default=64, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)
@@ -27,7 +28,7 @@ def add_arguments():
     parser.add_argument("--reg_factor", default=1, type=int)
     parser.add_argument("--adv_factor", default=0.001, type=float)
     parser.add_argument("--early_stop", default=False,  type=bool)
-    parser.add_argument("--time", default=False,  type=bool)
+    #parser.add_argument("--time", default=False,  type=bool)
     parser.add_argument("--patience", default=5, type=int)
     parser.add_argument("--exp_factor", default=1, type=float)
     #parser.add_argument("--time", default=True, type=bool)
@@ -38,9 +39,18 @@ def add_arguments():
     parser.add_argument("--double", default=False, type=bool)
     parser.add_argument("--triple", default=False, type=bool)
     parser.add_argument("--test", default=True, type=bool)
-    parser.add_argument("--constraints", default='sum_last')
+    parser.add_argument("--constraints", default='none')
     parser.add_argument("--mr", default=False, type=bool)
     parser.add_argument("--l2_reg", default=False, type=bool)
+    parser.add_argument("--dim_channels", default=1, type=int)
+    parser.add_argument("--time", default=True)
+    parser.add_argument("--nn", default=True)
+    #parser.add_argument("--test", default=True)
+    parser.add_argument("--time_steps", type=int, default=1)
+    parser.add_argument("--mass_violation", type=bool, default=True)
+    parser.add_argument("--factor", type=int, default=2)
+    parser.add_argument("--time_sr", default=False)
+    
     return parser.parse_args()
 
 
@@ -72,6 +82,7 @@ def main(args):
         #add_string = args.model_id + '_evaluate_training' 
         
     create_report(scores, args, add_string)
+    main_scoring(args)
     
 def load_weights(model, model_id):
     PATH = '/home/harder/constraint_generative_ml/models/'+model_id+'.pth'

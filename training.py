@@ -1,4 +1,4 @@
-from utils import process_for_training, is_gan, is_noisegan, load_model, get_optimizer, get_criterion, process_for_eval
+from utils import process_for_training, is_gan, is_noisegan, load_model, get_optimizer, get_criterion, process_for_eval, get_loss
 #from utils import train_shape_in, train_shape_out, val_shape_in, val_shape_out
 import models
 import numpy as np
@@ -121,7 +121,7 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, c
     else:
         outputs = model(inputs)
         #print(outputs.shape, targets.shape)
-        loss = criterion(outputs, targets)
+        loss = get_loss(outputs, targets, args)#criterion(outputs, targets)
     loss.backward()
     optimizer.step()  
     #print(torch.mean((outputs-targets)**2))
@@ -254,7 +254,7 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
                 outputs, coeff = model(inputs)
             else:
                 outputs = model(inputs)
-            loss = criterion(outputs, targets)  
+            loss = get_loss(outputs, targets, args)  
         #print(torch.mean((outputs-targets)**2))
         running_loss += loss.item()
         #print('val:', loss.item())
@@ -409,6 +409,8 @@ def evaluate_double_model(model1, model2, data, args, add_string=None):
     psnr = calculate_pnsr(mse, data[4])
     torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_'+args.model_id2+add_string+'.pt')                                      
     return {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim}
+
+
                                             
 
 def calculate_pnsr(mse, max_val):

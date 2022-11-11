@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.autograd import Variable
-
+torch.autograd.set_detect_anomaly(True)
 motif_basis = Variable(torch.load('./data/basis_4.pt'),requires_grad=True).to('cuda')
 
 # To use the following code, you need to copy them to your "models.py" file.
@@ -398,7 +398,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None):
         super(ResidualBlock, self).__init__()
         self.conv1 = conv3x3(in_channels, out_channels, stride)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
         self.conv2 = conv3x3(out_channels, out_channels)
         
     def forward(self, x):
@@ -433,8 +433,8 @@ class MultDownscaleConstraints(nn.Module):
         self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
-        sum_y = self.pool(y)
-        out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
+        out = self.pool(y)
+        out = y*torch.kron(lr*1/out, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
     
@@ -629,22 +629,22 @@ class ResNet2(nn.Module):
         # First layer
         if noise:
             self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)
-            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
         else:
-            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
         #Residual Blocks
         self.res_blocks = nn.ModuleList()
         for k in range(number_residual_blocks):
             self.res_blocks.append(ResidualBlock(number_channels, number_channels))
         # Second conv layer post residual blocks
         self.conv2 = nn.Sequential(
-            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
         # Upsampling layers
         self.upsampling = nn.ModuleList()
         for k in range(int(np.rint(np.log2(upsampling_factor)))):
             self.upsampling.append(nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2) )
         # Next layer after upper sampling
-        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
         # Final output layer
         self.conv4 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)      
         #optional renomralization layer
@@ -662,7 +662,7 @@ class ResNet2(nn.Module):
             self.constraints = MultDownscaleConstraints(upsampling_factor=upsampling_factor)
             self.is_constraints = True
             
-            
+        self.dim = dim    
         self.noise = noise
         
     def forward(self, x, mr=None, z=None): 
@@ -690,7 +690,9 @@ class ResNet2(nn.Module):
             out = self.conv3(out)
             out = self.conv4(out)
             if self.is_constraints:
-                out = self.constraints(out, x[:,0,...])
+                out[:,...] = self.constraints(out, x[:,0,...])
+                #for i in range(self.dim):
+                 #   out[:,0,i,...] = self.constraints(out, x[:,0,i,...])
             #out[:,0,:,:] *= 16
             out = out.unsqueeze(1)
             return out  
