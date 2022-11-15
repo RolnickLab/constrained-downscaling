@@ -6,7 +6,7 @@ import argparse
 def add_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default='dataset34', help="choose a data set to use")
-    parser.add_argument("--scale", default='minmax_fixed', help="standard, minmax, none")
+    parser.add_argument("--scale", default='minmax', help="standard, minmax, none")
     parser.add_argument("--model", default='motifnet_learnable')
     parser.add_argument("--model_id", default='motifbased_exp_ood_softmaxfirst_test')
     parser.add_argument("--number_channels", default=64, type=int)
@@ -34,6 +34,7 @@ def add_arguments():
     parser.add_argument("--test", default=False, type=bool)
     parser.add_argument("--l2_reg", default=False, type=bool)
     parser.add_argument("--dim_channels", default=1, type=int)
+    parser.add_argument("--constraints_window_size", default=4, type=int)
     
     
     return parser.parse_args()

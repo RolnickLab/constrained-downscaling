@@ -15,10 +15,11 @@ def load_data(args):
     if args.test:
         input_val = torch.load('./data/test/'+args.dataset+'/input_test.pt')
         target_val = torch.load('./data/test/'+args.dataset+'/target_test.pt')
+        #target_val = torch.load('./data/val/dataset28/target_val.pt')
     else:
         input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
+        #target_val = torch.load('./data/val/dataset28/target_val.pt')
         target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
-        #target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
     #define dimesions
     global train_shape_in , train_shape_out, val_shape_in, val_shape_in
     train_shape_in = input_train.shape
@@ -125,8 +126,8 @@ def load_model(args, discriminator=False):
             model = models.MixtureModel(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
         elif args.model == 'gan':
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels)
-        else:
-            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels)
+        elif args.model == 'resnet2':
+            model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
     model.to(device)
     return model
 
@@ -141,14 +142,14 @@ def get_criterion(args, discriminator=False):
         criterion = nn.MSELoss()
     return criterion
 
-def mass_loss(output, true_value, args):
+def mass_loss(output, in_val, args):
     ds_out = torch.nn.functional.avg_pool2d(output[:,0,0,:,:], args.upsampling_factor)
-    ds_true = torch.nn.functional.avg_pool2d(true_value[:,0,0,:,:], args.upsampling_factor)
-    return torch.nn.functional.mse_loss(ds_out, ds_true)
+    #ds_true = torch.nn.functional.avg_pool2d(true_value[:,0,0,:,:], args.upsampling_factor)
+    return torch.nn.functional.mse_loss(ds_out, in_val)
 
-def get_loss(output, true_value, args):
+def get_loss(output, true_value, in_val, args):
     if args.loss == 'mass_constraints':
-        return args.alpha*torch.nn.functional.mse_loss(output, true_value) + (1-args.alpha)*mass_loss(output, true_value, args)
+        return args.alpha*torch.nn.functional.mse_loss(output, true_value) + (1-args.alpha)*mass_loss(output, in_val[:,0,0,...], args)
     else:
         return torch.nn.functional.mse_loss(output, true_value)
     

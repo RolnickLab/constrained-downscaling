@@ -50,6 +50,7 @@ def add_arguments():
     parser.add_argument("--mass_violation", type=bool, default=True)
     parser.add_argument("--factor", type=int, default=2)
     parser.add_argument("--time_sr", default=False)
+    parser.add_argument("--constraints_window_size", default=4, type=int)
     
     return parser.parse_args()
 
@@ -81,7 +82,7 @@ def main(args):
         
         #add_string = args.model_id + '_evaluate_training' 
         
-    create_report(scores, args, add_string)
+    #create_report(scores, args, add_string)
     main_scoring(args)
     
 def load_weights(model, model_id):

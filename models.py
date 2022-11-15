@@ -43,8 +43,8 @@ class BasisGenerator(nn.Module):
         # (shape[0], shape[1], shape[2])
 
         if self.positivity:
-            basis = torch.exp(basis)
-            #basis = torch.nn.functional.softplus(basis)
+            #basis = torch.exp(basis)
+            basis = torch.nn.functional.softplus(basis)
 
         # Normalization
         sums = torch.sum(basis, dim=(1, 2))
@@ -364,6 +364,7 @@ class MotifNetLearnBasis(nn.Module):
             out = out/sum_c
             out = self.mult_in(out, x[:,0,...])
         
+        
         #print('input', x[0,0,0,0,0])
         #print('after mult', out[0,:,0,0].mean())
         # (n_batch, 16, 32, 32)
@@ -398,7 +399,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None):
         super(ResidualBlock, self).__init__()
         self.conv1 = conv3x3(in_channels, out_channels, stride)
-        self.relu = nn.ReLU(inplace=False)
+        self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(out_channels, out_channels)
         
     def forward(self, x):
@@ -444,6 +445,7 @@ class AddDownscaleConstraints(nn.Module):
         self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
+        y = y.clone()
         sum_y = self.pool(y)
         out =y+ torch.kron(lr-sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
@@ -461,15 +463,18 @@ class EnforcementOperator(nn.Module):
         return out 
     
 class SoftmaxConstraints(nn.Module):
-    def __init__(self, upsampling_factor, exp_factor=1):
+    def __init__(self, upsampling_factor, cwindow_size, exp_factor=1):
         super(SoftmaxConstraints, self).__init__()
-        self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
+        self.pool = torch.nn.AvgPool2d(kernel_size=cwindow_size)
+        self.lr_pool = torch.nn.AvgPool2d(kernel_size=int(cwindow_size/upsampling_factor))
         self.upsampling_factor = upsampling_factor
+        self.cwindow_size = cwindow_size
         self.exp_factor = exp_factor
     def forward(self, y, lr):
         y = torch.exp(y*self.exp_factor)
         sum_y = self.pool(y)
-        out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
+        lr_sum = self.lr_pool(lr)
+        out = y*torch.kron(lr_sum*1/sum_y, torch.ones((self.cwindow_size,self.cwindow_size)).to('cuda'))
         return out
     
 
@@ -624,33 +629,33 @@ class ResNet1(nn.Module):
             return out  
         
 class ResNet2(nn.Module):
-    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=2):
         super(ResNet2, self).__init__()
         # First layer
         if noise:
             self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)
-            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
+            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         else:
-            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
+            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         #Residual Blocks
         self.res_blocks = nn.ModuleList()
         for k in range(number_residual_blocks):
             self.res_blocks.append(ResidualBlock(number_channels, number_channels))
         # Second conv layer post residual blocks
         self.conv2 = nn.Sequential(
-            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         # Upsampling layers
         self.upsampling = nn.ModuleList()
         for k in range(int(np.rint(np.log2(upsampling_factor)))):
             self.upsampling.append(nn.ConvTranspose2d(number_channels, number_channels, kernel_size=2, padding=0, stride=2) )
         # Next layer after upper sampling
-        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=False))
+        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         # Final output layer
         self.conv4 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)      
         #optional renomralization layer
         self.is_constraints = False
         if constraints == 'softmax':
-            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor)
+            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor, cwindow_size=cwindow_size)
             self.is_constraints = True
         elif constraints == 'enforce_op':
             self.constraints = EnforcementOperator(upsampling_factor=upsampling_factor)

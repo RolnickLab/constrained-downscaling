@@ -121,7 +121,7 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, c
     else:
         outputs = model(inputs)
         #print(outputs.shape, targets.shape)
-        loss = get_loss(outputs, targets, args)#criterion(outputs, targets)
+        loss = get_loss(outputs, targets, inputs,args)#criterion(outputs, targets)
     loss.backward()
     optimizer.step()  
     #print(torch.mean((outputs-targets)**2))
@@ -254,7 +254,7 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
                 outputs, coeff = model(inputs)
             else:
                 outputs = model(inputs)
-            loss = get_loss(outputs, targets, args)  
+            loss = get_loss(outputs, targets, inputs, args)  
         #print(torch.mean((outputs-targets)**2))
         running_loss += loss.item()
         #print('val:', loss.item())
