@@ -7,6 +7,8 @@ import torchgeometry as tgm
 import argparse
 from torch.utils.data import DataLoader, TensorDataset
 import csv
+from torchmetrics.functional import multiscale_structural_similarity_index_measure, structural_similarity_index_measure
+
 
 def add_arguments():
     parser = argparse.ArgumentParser()
@@ -20,6 +22,7 @@ def add_arguments():
     parser.add_argument("--mass_violation", type=bool, default=True)
     parser.add_argument("--factor", type=int, default=4)
     parser.add_argument("--time_sr", default=False)
+    
     #args for model loading
     return parser.parse_args()
 
@@ -27,21 +30,32 @@ def main_scoring(args):
     #n = 24
     input_val = torch.load('./data/test/'+args.dataset+'/input_test.pt')
     target_val = torch.load('./data/test/'+args.dataset+'/target_test.pt')
+    #target_val = torch.load('./data/test/'+args.dataset+'/target_test.pt')
     #target_val = torch.load('./data/test/dataset28/target_test.pt')
     val_data = TensorDataset(input_val, target_val)
     pred = np.zeros(target_val.shape)
+    max_val = target_val.max()
+    min_val = target_val.min()
     print(pred.shape)
     factor = args.factor
     mse = 0
     mae = 0
     ssim = 0
+    mean_bias = 0
     mass_violation = 0
+    ms_ssim = 0
+    corr = 0
+    crps = 0
+    
     l2_crit = nn.MSELoss()
     l1_crit = nn.L1Loss()
-    ssim_criterion = tgm.losses.SSIM(window_size=11, max_val=130.83, reduction='mean')
+    #ssim_criterion = StructuralSimilarityIndexMeasure() #tgm.losses.SSIM(window_size=11, max_val=max_val, reduction='mean')
     if args.nn:
-       
-        pred = torch.load('./data/prediction/'+args.dataset+'_'+args.model_id+'_test.pt')
+        if args.ensemble:
+            en_pred = torch.load('./data/prediction/'+args.dataset+'_'+args.model_id+'_test_ensemble.pt')
+            pred = torch.mean(en_pred, dim=1)
+        else:
+            pred = torch.load('./data/prediction/'+args.dataset+'_'+args.model_id+'_test.pt')
         pred = pred.detach().cpu().numpy()
         print(pred.shape)
     for i,(lr, hr) in enumerate(val_data):
@@ -71,7 +85,13 @@ def main_scoring(args):
                 print(i, mse_loss)'''
                 mse += l2_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item()
                 mae += l1_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item()
-                ssim += ssim_criterion(torch.Tensor(pred[i,j:j+1,...]), hr[j:j+1,...]).item()
+                mean_bias += torch.mean( hr[j,...]-torch.abs(torch.Tensor(pred[i,j,...])))
+                corr += pearsonr(torch.Tensor(pred[i,j,...]).flatten(),  hr[j,...].flatten())
+                ms_ssim += multiscale_structural_similarity_index_measure(torch.Tensor(pred[i,j:j+1,...]), hr[j:j+1,...], data_range=max_val-min_val, kernel_size=11, betas=(0.2856, 0.3001, 0.2363))#0.0448, 0.2856, 0.3001, 0.2363))
+                ssim += structural_similarity_index_measure(torch.Tensor(pred[i,j:j+1,...]), hr[j:j+1,...] , data_range=max_val-min_val, kernel_size=11)#ssim_criterion(torch.Tensor(pred[i,j:j+1,...]), hr[j:j+1,...]).item()
+                if args.ensemble:
+                    crps_ens = crps_ensemble(hr[j,0,0,...].numpy(), np.swapaxis(np.swapaxis(pred[i,:,j,0,0,...], 0,1),1,2))
+                    crps += np.mean(crps_ens)
                 if args.mass_violation:
                     if args.time_sr:
                         if j==0:
@@ -105,17 +125,21 @@ def main_scoring(args):
         mse *= 1/(input_val.shape[0]*args.time_steps)
         mae *= 1/(input_val.shape[0]*args.time_steps)
         ssim *= 1/(input_val.shape[0]*args.time_steps)
+        mean_bias *= 1/(input_val.shape[0]*args.time_steps)
+        corr *= 1/(input_val.shape[0]*args.time_steps)
+        ms_ssim *= 1/(input_val.shape[0]*args.time_steps)
+        
         if args.mass_violation:
             if args.time_sr:
                 mass_violation *= 1/(input_val.shape[0]*args.time_steps)
             else:
-                mass_violation *= 1/(input_val.shape[0]*2)
+                mass_violation *= 1/(input_val.shape[0]) #what is the 2 doing here?
     else:
         mse *= 1/input_val.shape[0]   
         mae *= 1/input_val.shape[0] 
         ssim *= 1/input_val.shape[0] 
     psnr = calculate_pnsr(mse, target_val.max() )     
-    scores = {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':1-ssim, 'Mass_violation': mass_violation}
+    scores = {'MSE':mse, 'RMSE':torch.sqrt(torch.Tensor([mse])), 'PSNR': psnr, 'MAE':mae, 'SSIM':ssim, 'Mass_violation': mass_violation, 'Mean bias': mean_bias, 'MS SSIM': ms_ssim, 'Pearson corr': corr, 'CRPS': crps}
     print(scores)
     create_report(scores, args)
     #np.save('./data/prediction/bic.npy', pred)
@@ -123,6 +147,59 @@ def main_scoring(args):
             
 def calculate_pnsr(mse, max_val):
     return 20 * torch.log10(max_val / torch.sqrt(torch.Tensor([mse])))
+                    
+def pearsonr(x, y):
+    """
+    Mimics `scipy.stats.pearsonr`
+    Arguments
+    ---------
+    x : 1D torch.Tensor
+    y : 1D torch.Tensor
+    Returns
+    -------
+    r_val : float
+        pearsonr correlation coefficient between x and y
+    
+    Scipy docs ref:
+        https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.pearsonr.html
+    
+    Scipy code ref:
+        https://github.com/scipy/scipy/blob/v0.19.0/scipy/stats/stats.py#L2975-L3033
+    Example:
+        >>> x = np.random.randn(100)
+        >>> y = np.random.randn(100)
+        >>> sp_corr = scipy.stats.pearsonr(x, y)[0]
+        >>> th_corr = pearsonr(torch.from_numpy(x), torch.from_numpy(y))
+        >>> np.allclose(sp_corr, th_corr)
+    """
+    mean_x = torch.mean(x)
+    mean_y = torch.mean(y)
+    xm = x.sub(mean_x)
+    ym = y.sub(mean_y)
+    r_num = xm.dot(ym)
+    r_den = torch.norm(xm, 2) * torch.norm(ym, 2)
+    r_val = r_num / r_den
+    return r_val
+
+def crps_ensemble(observation, forecasts):
+    fc = forecasts.copy()
+    fc.sort(axis=-1)
+    obs = observation
+    fc_below = fc<obs[...,None]
+    crps = np.zeros_like(obs)
+
+    for i in range(fc.shape[-1]):
+        below = fc_below[...,i]
+        weight = ((i+1)**2 - i**2) / fc.shape[-1]**2
+        crps[below] += weight * (obs[below]-fc[...,i][below])
+
+    for i in range(fc.shape[-1]-1,-1,-1):
+        above  = ~fc_below[...,i]
+        k = fc.shape[-1]-1-i
+        weight = ((k+1)**2 - k**2) / fc.shape[-1]**2
+        crps[above] += weight * (fc[...,i][above]-obs[above])
+
+    return crps
                                             
 def create_report(scores, args):
     args_dict = args_to_dict(args)

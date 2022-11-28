@@ -105,14 +105,31 @@ def run_training(args, data):
 def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, criterion_mr=None, criterion_mr2=None, discriminator=False):
     optimizer.zero_grad()
     if args.mr:
-        mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
-        mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
-        outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+        if args.upsampling_factor == 4:
+            mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+            outputs,  mr2 = model(inputs,  mr2_target)   
+            loss_mr = criterion_mr2(mr2, mr2_target.unsqueeze(1))
+            loss_hr = criterion(outputs, targets)
+            loss = args.alpha*loss_hr+ (1-args.alpha)*loss_mr
+        elif args.upsampling_factor == 8:
+            mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+            mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+            outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+            loss_mr1 = criterion_mr(mr1, mr1_target.unsqueeze(1))
+            loss_mr2 = criterion_mr2(mr2, mr2_target.unsqueeze(1))
+            loss_hr = criterion(outputs, targets)
+            loss = 0.33*loss_mr1 + 0.33*loss_mr2 + 0.33*loss_hr
+        elif args.upsampling_factor == 16:
+            mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+            mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+            outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+            loss_mr1 = criterion_mr(mr1, mr1_target.unsqueeze(1))
+            loss_mr2 = criterion_mr2(mr2, mr2_target.unsqueeze(1))
+            loss_hr = criterion(outputs, targets)
+            loss = 0.33*loss_mr1 + 0.33*loss_mr2 + 0.33*loss_hr
         
-        loss_mr1 = criterion_mr(mr1, mr1_target.unsqueeze(1))
-        loss_mr2 = criterion_mr2(mr2, mr2_target.unsqueeze(1))
-        loss_hr = criterion(outputs, targets)
-        loss = 0.33*loss_mr1 + 0.33*loss_mr2 + 0.33*loss_hr
+        
+        
         #loss = args.alpha*loss_hr+ (1-args.alpha)*loss_mr
     elif args.l2_reg:
         outputs, coeff = model(inputs)
@@ -227,9 +244,20 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
                         outputs = model(inputs, z)
             else:
                 if args.mr:
-                    mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
-                    mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
-                    outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+                    if args.upsampling_factor == 4:
+                        mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                        outputs,  mr2 = model(inputs,  mr2_target)   
+                        
+                    elif args.upsampling_factor == 8:
+                        mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+                        mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                        outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+                        
+                    elif args.upsampling_factor == 16:
+                        mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+                        mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                        outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+                        
                     #outputs, mr, mr = model(inputs)
                 else:
                     outputs = model(inputs)
@@ -246,10 +274,20 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
             loss += args.adv_factor * adversarial_loss
         else:
             if args.mr:
-                mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
-                mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
-                outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
-                #outputs, mr, mr = model(inputs)
+                if args.upsampling_factor == 4:
+                        mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                        outputs,  mr2 = model(inputs,  mr2_target)   
+                        
+                elif args.upsampling_factor == 8:
+                    mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+                    mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                    outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+
+                elif args.upsampling_factor == 16:
+                    mr1_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 4)
+                    mr2_target = torch.nn.functional.avg_pool2d(targets[:,0,...], 2)
+                    outputs, mr1, mr2 = model(inputs, mr1_target, mr2_target)
+
             elif args.l2_reg:
                 outputs, coeff = model(inputs)
             else:
@@ -315,16 +353,32 @@ def evaluate_model(data, args, add_string=None):
                 inputs, targets = process_for_training(inputs, targets)
                 if args.noise:
                     if args.time:
-                        z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
-                        z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
-                        z = torch.Tensor(z).to(device)
-                        z_init = torch.Tensor(z_init).to(device)
-                        outputs = model(inputs, z, z_init)
+                        if args.ensemble:
+                            for i in range(10):
+                                z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+                                z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
+                                z = torch.Tensor(z).to(device)
+                                z_init = torch.Tensor(z_init).to(device)
+                                outputs = model(inputs, z, z_init) 
+                        else:
+                            z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+                            z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
+                            z = torch.Tensor(z).to(device)
+                            z_init = torch.Tensor(z_init).to(device)
+                            outputs = model(inputs, z, z_init)
                     else:
-                        z = np.random.normal( size=[inputs.shape[0], 100])
-                        z = torch.Tensor(z).to(device)
+                        if args.ensemble:
+                            outputs = torch.zeros_like(targets)
+                            outputs = outputs.unsqueeze(1)
+                            for i in range(10):
+                                z = np.random.normal( size=[inputs.shape[0], 100])
+                                z = torch.Tensor(z).to(device)
+                                outputs[:,i,...] = model(inputs, z)
+                        else:
+                            z = np.random.normal( size=[inputs.shape[0], 100])
+                            z = torch.Tensor(z).to(device)
 
-                        outputs = model(inputs, z)
+                            outputs = model(inputs, z)
                 else:
                     if args.mr:
                         outputs, mr = model(inputs)
@@ -354,7 +408,10 @@ def evaluate_model(data, args, add_string=None):
     ssim = running_ssim/len(data)
     psnr = calculate_pnsr(mse, data[4])
     if add_string:
-        torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+add_string+'.pt')
+        if args.ensemble:
+            torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+add_string+'ensemble.pt')
+        else:
+            torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+add_string+'.pt')
     else:
         torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+'_fullprediction.pt')
         

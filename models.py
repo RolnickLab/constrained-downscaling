@@ -434,6 +434,7 @@ class MultDownscaleConstraints(nn.Module):
         self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
+        y = y.clone()
         out = self.pool(y)
         out = y*torch.kron(lr*1/out, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
@@ -700,10 +701,84 @@ class ResNet2(nn.Module):
                  #   out[:,0,i,...] = self.constraints(out, x[:,0,i,...])
             #out[:,0,:,:] *= 16
             out = out.unsqueeze(1)
+            return out
+        
+class ResNet3(nn.Module):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=2):
+        super(ResNet3, self).__init__()
+        # First layer
+        if noise:
+            self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)
+            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        else:
+            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        #Residual Blocks
+        self.res_blocks = nn.ModuleList()
+        for k in range(number_residual_blocks):
+            self.res_blocks.append(ResidualBlock(number_channels, number_channels))
+        # Second conv layer post residual blocks
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        # Upsampling layers
+        self.upsampling = nn.ModuleList()
+        for k in range(1):
+            self.upsampling.append(nn.ConvTranspose2d(number_channels, number_channels, kernel_size=3, padding=0, stride=3) )
+        # Next layer after upper sampling
+        self.conv3 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+        # Final output layer
+        self.conv4 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)      
+        #optional renomralization layer
+        self.is_constraints = False
+        if constraints == 'softmax':
+            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor, cwindow_size=cwindow_size)
+            self.is_constraints = True
+        elif constraints == 'enforce_op':
+            self.constraints = EnforcementOperator(upsampling_factor=upsampling_factor)
+            self.is_constraints = True
+        elif constraints == 'add':
+            self.constraints = AddDownscaleConstraints(upsampling_factor=upsampling_factor)
+            self.is_constraints = True
+        elif constraints == 'mult':
+            self.constraints = MultDownscaleConstraints(upsampling_factor=upsampling_factor)
+            self.is_constraints = True
+            
+        self.dim = dim    
+        self.noise = noise
+        
+    def forward(self, x, mr=None, z=None): 
+        if self.noise:
+            out = self.conv_trans0(z)
+            out = self.conv1(torch.cat(( x[:,0,...],out), dim=1))
+            for layer in self.res_blocks:
+                out = layer(out)
+            out = self.conv2(out)
+            for layer in self.upsampling:
+                out = layer(out)
+            out = self.conv3(out)
+            out = self.conv4(out)
+            if self.is_constraints:
+                out = self.constraints(out,  x[:,0,...])
             return out  
+        else:
+            #print(x.shape)
+            out = self.conv1(x[:,0,...])
+            for layer in self.upsampling:
+                out = layer(out)
+            out = self.conv2(out)    
+            for layer in self.res_blocks:
+                out = layer(out)
+            out = self.conv3(out)
+            out = self.conv4(out)
+            if self.is_constraints:
+                out[:,...] = self.constraints(out, x[:,0,...])
+                #for i in range(self.dim):
+                 #   out[:,0,i,...] = self.constraints(out, x[:,0,i,...])
+            #out[:,0,:,:] *= 16
+            out = out.unsqueeze(1)
+            return out
         
 class ResNetNoise(nn.Module):
-    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=2):
         super(ResNetNoise, self).__init__()
         # First layer
         
@@ -728,7 +803,7 @@ class ResNetNoise(nn.Module):
         #optional renomralization layer
         self.is_constraints = False
         if constraints == 'softmax':
-            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor)
+            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor, cwindow_size=cwindow_size)
             self.is_constraints = True
         elif constraints == 'enforce_op':
             self.constraints = EnforcementOperator(upsampling_factor=upsampling_factor)
@@ -817,7 +892,7 @@ class MotifNet(nn.Module):
 
         
 class ResNet2Up(nn.Module):
-    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, output_mr=False):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, output_mr=False,  cwindow_size= 2):
         super(ResNet2Up, self).__init__()
         #PART I
         self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
@@ -833,7 +908,7 @@ class ResNet2Up(nn.Module):
         
         self.is_constraints = False
         if constraints == 'softmax':
-            self.constraints = SoftmaxConstraints(upsampling_factor=2)
+            self.constraints = SoftmaxConstraints(upsampling_factor=2, cwindow_size=cwindow_size)
             self.is_constraints = True
         elif constraints == 'enforce_op':
             self.constraints = EnforcementOperator(upsampling_factor=2)
@@ -844,7 +919,7 @@ class ResNet2Up(nn.Module):
             
         self.is_single_constraints = False
         if constraints == 'softmax_single':
-            self.constraints = SoftmaxConstraints(upsampling_factor=4)
+            self.constraints = SoftmaxConstraints(upsampling_factor=4, cwindow_size=cwindow_size)
             self.is_single_constraints = True
         elif constraints == 'enforce_op_single':
             self.constraints = EnforcementOperator(upsampling_factor=4)
@@ -865,7 +940,7 @@ class ResNet2Up(nn.Module):
         self.conv23 = nn.Sequential(nn.Conv2d(number_channels, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         self.conv24 = nn.Conv2d(number_channels, dim, kernel_size=1, stride=1, padding=0)
         if constraints == 'softmax':
-            self.constraints2 = SoftmaxConstraints(upsampling_factor=2)
+            self.constraints2 = SoftmaxConstraints(upsampling_factor=2, cwindow_size=cwindow_size)
         elif constraints == 'enforce_op':
             self.constraints2 = EnforcementOperator(upsampling_factor=2)
         elif constraints == 'mult':

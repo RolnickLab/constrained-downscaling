@@ -92,7 +92,7 @@ def load_model(args, discriminator=False):
             elif args.model == 'gan_4x':
                 model = models.ResNet2UpNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
             else:
-                model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints)
+                model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
         elif args.model == 'mr_constr':
             model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=1, output_mr=args.mr)
         elif args.model == 'conv_gru_det':
@@ -112,7 +112,7 @@ def load_model(args, discriminator=False):
         elif args.model == 'srgan':
             model = models.SRGANGenerator(n_residual_blocks=args.number_residual_blocks, upsample_factor=args.upsampling_factor)
         elif args.model == 'res_2up':
-            model = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
+            model = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr,  cwindow_size= args.constraints_window_size)
         elif args.model == 'res_4up':
             model = models.ResNet4Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
         elif args.model == 'res_3up':
@@ -128,6 +128,8 @@ def load_model(args, discriminator=False):
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels)
         elif args.model == 'resnet2':
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
+        elif args.model == 'resnet3':
+            model = models.ResNet3(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
     model.to(device)
     return model
 
