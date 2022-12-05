@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.autograd import Variable
 torch.autograd.set_detect_anomaly(True)
-motif_basis = Variable(torch.load('./data/basis_4.pt'),requires_grad=True).to('cuda')
+#motif_basis = Variable(torch.load('./data/basis_4.pt'),requires_grad=True).to('cuda')
 
 # To use the following code, you need to copy them to your "models.py" file.
 # Author: Qidong Yang
@@ -457,6 +457,7 @@ class EnforcementOperator(nn.Module):
         self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
+        y = y.clone()
         sum_y = self.pool(y)
         diff_P_x = torch.kron(lr-sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         sigma = torch.sign(-diff_P_x)

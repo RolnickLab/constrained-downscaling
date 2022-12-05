@@ -12,7 +12,7 @@ def add_arguments():
     parser.add_argument("--model", default='resnet2')
     parser.add_argument("--model_id", default='resnet2_ood_test')
     parser.add_argument("--model_id2", default='nu_aaai_symp_cnn_softmaxsingle_long_4_2')
-    parser.add_argument("--number_channels", default=64, type=int)
+    parser.add_argument("--number_channels", default=32, type=int)
     parser.add_argument("--number_residual_blocks", default=4, type=int)
     parser.add_argument("--upsampling_factor", default=4, type=int)
     parser.add_argument("--noise", default=False)
@@ -28,7 +28,7 @@ def add_arguments():
     parser.add_argument("--reg_factor", default=1, type=int)
     parser.add_argument("--adv_factor", default=0.001, type=float)
     parser.add_argument("--early_stop", default=False,  type=bool)
-    #parser.add_argument("--time", default=False,  type=bool)
+    parser.add_argument("--time", default=False,  type=bool)
     parser.add_argument("--patience", default=5, type=int)
     parser.add_argument("--exp_factor", default=1, type=float)
     #parser.add_argument("--time", default=True, type=bool)
@@ -43,7 +43,6 @@ def add_arguments():
     parser.add_argument("--mr", default=False, type=bool)
     parser.add_argument("--l2_reg", default=False, type=bool)
     parser.add_argument("--dim_channels", default=1, type=int)
-    parser.add_argument("--time", default=True)
     parser.add_argument("--nn", default=True)
     #parser.add_argument("--test", default=True)
     parser.add_argument("--time_steps", type=int, default=1)
@@ -52,11 +51,13 @@ def add_arguments():
     parser.add_argument("--time_sr", default=False)
     parser.add_argument("--constraints_window_size", default=4, type=int)
     parser.add_argument("--ensemble", default=False)
+    parser.add_argument("--test_val_train", default='val')
+    
     
     return parser.parse_args()
 
 
-def main(args):
+def main_eval(args):
 
     data = load_data(args)
     if args.double:
@@ -73,12 +74,8 @@ def main(args):
         
         
     else:
-        #model1 = load_model(args)
-
-        #model1 = load_weights(model1, args.model_id)
-
-        add_string = '_test'
-        scores = evaluate_model( data, args, add_string)
+        
+        scores = evaluate_model( data, args)
 
         
         #add_string = args.model_id + '_evaluate_training' 
@@ -95,4 +92,4 @@ def load_weights(model, model_id):
     
 if __name__ == '__main__':
     args = add_arguments()
-    main(args)
+    main_eval(args)

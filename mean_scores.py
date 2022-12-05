@@ -1,5 +1,7 @@
 import csv
 
+import argparse
+import numpy as np
 def add_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", default='test')
@@ -8,20 +10,23 @@ def add_arguments():
 #load five csvs and calculate means and stds
 
 def main(args):
-    number_runs = 5
-    metrics = ['MSE', 'RMSE', 'PSNR', 'MAE', 'SSIM', 'Mass_violation', 'Mean bias', 'MS SSIM', 'Pearson corr', 'CRPS']
+    number_runs = 3
+    metrics = ['MSE', 'RMSE', 'PSNR', 'MAE', 'SSIM', 'Mass_violation', 'Mean bias', 'MS SSIM', 'Pearson corr', 'CRPS', 'Mean abs bias', 'neg mean', 'neg num']
     dict_lists = {}
+    means = {}
     for metric in metrics:
         means[metric] = []
     for i in range(number_runs):#
-        filename = args.model_id + '_' + str(i)
+        filename = './data/score_log/'+ args.model_id + '_' + str(i) +'_test.csv'
         with open(filename,'r') as data:
             for line in csv.reader(data):
                 if line[0] in metrics:
-                    means[line[0]].append(line[1])
+                    print(type(line[1]), line[1], line[0])
+                    means[line[0]].append(float(line[1]))
     
     #iterate over dict lists
-    for metric, values in state_dict.items():
+    for metric, values in means.items():
+        print(metric, values)
         dict_lists[metric+'_mean'] = np.mean(np.array(values))
         dict_lists[metric+'_std'] = np.std(np.array(values))
         

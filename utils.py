@@ -8,18 +8,16 @@ device = 'cuda'
 
 def load_data(args):
     input_train = torch.load('./data/train/'+args.dataset+'/input_train.pt')
-    #target_train = torch.load('./data/train/dataset28/target_train.pt')
     target_train = torch.load('./data/train/'+args.dataset+'/target_train.pt')
-    #input_train = input_train[:4000,...]
-    #target_train = target_train[:4000,...]
-    if args.test:
+    if args.test_val_train == 'test':
         input_val = torch.load('./data/test/'+args.dataset+'/input_test.pt')
         target_val = torch.load('./data/test/'+args.dataset+'/target_test.pt')
-        #target_val = torch.load('./data/val/dataset28/target_val.pt')
-    else:
+    elif args.test_val_train == 'val':
         input_val = torch.load('./data/val/'+args.dataset+'/input_val.pt')
-        #target_val = torch.load('./data/val/dataset28/target_val.pt')
         target_val = torch.load('./data/val/'+args.dataset+'/target_val.pt')
+    elif args.test_val_train == 'train':
+        input_val = input_train
+        target_val = target_train
     #define dimesions
     global train_shape_in , train_shape_out, val_shape_in, val_shape_in
     train_shape_in = input_train.shape
@@ -151,7 +149,7 @@ def mass_loss(output, in_val, args):
 
 def get_loss(output, true_value, in_val, args):
     if args.loss == 'mass_constraints':
-        return args.alpha*torch.nn.functional.mse_loss(output, true_value) + (1-args.alpha)*mass_loss(output, in_val[:,0,0,...], args)
+        return args.alpha*mass_loss(output, in_val[:,0,0,...], args) + (1-args.alpha)*torch.nn.functional.mse_loss(output, true_value)
     else:
         return torch.nn.functional.mse_loss(output, true_value)
     
@@ -168,9 +166,13 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
         outputs = outputs*args.std+args.mean
         targets = targets*args.std+args.mean 
     elif args.scale == 'minmax':
-        for i in range(args.dim_channels):
-            outputs[:,0,i,...] = outputs[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device) 
-            targets[:,0,i,...] = targets[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device)
+        if args.ensemble:
+            outputs[:,:,0,0,...] = outputs[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
+            targets[:,0,0,...] = targets[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device)
+        else:
+            for i in range(args.dim_channels):
+                outputs[:,0,i,...] = outputs[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device) 
+                targets[:,0,i,...] = targets[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device)
     elif args.scale == 'minmax_fixed':
         outputs = outputs*args.max         
         targets = targets*args.max
