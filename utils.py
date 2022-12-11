@@ -94,7 +94,7 @@ def load_model(args, discriminator=False):
         elif args.model == 'mr_constr':
             model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=1, output_mr=args.mr)
         elif args.model == 'conv_gru_det':
-            model = models.ConvGRUGeneratorDet( number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, time_steps=3, constraints=args.constraints)
+            model = models.ConvGRUGeneratorDet( number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, time_steps=3, constraints=args.constraints, cwindow_size=args.constraints_window_size)
         elif args.model == 'conv_gru_det_con':
             model = models.ConvGRUGeneratorDetCon()
         elif args.model == 'frame_gru':

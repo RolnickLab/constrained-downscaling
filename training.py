@@ -89,6 +89,7 @@ def run_training(args, data):
             val_loss, val_mass_loss = validate_model(model, criterion, data[1], best, patience_count, epoch, args)
         val_losses.append(val_loss)
         val_cons_losses.append(val_mass_loss)
+        print('Mass',mass_loss, val_mass_loss)
         print('Val loss: {:.5f}'.format(val_loss))
         checkpoint(model, val_loss, best, args, epoch)
         #if args.early_stop:
@@ -155,7 +156,7 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, c
         #print(outputs.shape, targets.shape)
         loss = get_loss(outputs, targets, inputs,args)#criterion(outputs, targets)
     if args.save_mass_loss:
-        mass_loss = torch.mean( torch.abs(torch.nn.functional.avg_pool2d(outputs[:,0,0,:,:], args.upsampling_factor)-inputs[:,0,0,:,:])) 
+        mass_loss = torch.mean( torch.abs(torch.nn.functional.avg_pool2d(outputs[:,0,0,:,:].detach(), args.upsampling_factor)-inputs[:,0,0,:,:])) 
     else:
         mass_loss = 0
     loss.backward()
@@ -196,7 +197,7 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
         else:
             outputs = model(inputs)
             loss = criterion(outputs, targets)
-    if args.save_mmass_loss:
+    if args.save_mass_loss:
         mass_loss = torch.mean( torch.abs(torch.nn.functional.avg_pool2d(outputs[:,0,0,:,:], args.upsampling_factor)-inputs[:,0,0,:,:])) 
     else:
         mass_loss = 0
@@ -220,6 +221,7 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
     d_loss_real = criterion_discr(real_output, real_label)                    
     d_loss_fake = criterion_discr(fake_output, fake_label)
     # Count all discriminator losses.
+    #print(d_loss_real.item(), d_loss_fake.item())
     d_loss = d_loss_real + d_loss_fake
     d_loss.backward()
     optimizer_discr.step()
@@ -317,7 +319,7 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
             else:
                 outputs = model(inputs)
             loss = get_loss(outputs, targets, inputs, args) 
-        #running_mass_loss += torch.mean( torch.abs(torch.nn.functional.avg_pool2d(outputs[:,0,0,:,:], args.upsampling_factor)-inputs[:,0,0,:,:]))    
+        running_mass_loss += torch.mean( torch.abs(torch.nn.functional.avg_pool2d(outputs[:,0,0,:,:].detach(), args.upsampling_factor)-inputs[:,0,0,:,:]))    
         #print(torch.mean((outputs-targets)**2))
         running_loss += loss.item()
         #print('val:', loss.item())
@@ -326,7 +328,7 @@ def validate_model(model, criterion, data, best, patience, epoch, args, discrimi
     loss = running_loss/len(data)
     mass_loss = running_mass_loss/len(data)
     model.train()
-    return loss, mass_loss
+    return loss, mass_loss.item()
 
 Tensor = torch.cuda.FloatTensor
 
@@ -378,65 +380,51 @@ def evaluate_model(data, args, add_string=None):
     else:
         full_pred = torch.zeros(data[8]) ###!!!change back to data[8]
     with tqdm(data[1], unit="batch") as tepoch:     ###!!!change back to data[1]  
-            for i,(inputs,  targets) in enumerate(tepoch): 
-                inputs, targets = process_for_training(inputs, targets)
-                if args.noise:
-                    if args.time:
-                        if args.ensemble:
-                            for i in range(10):
-                                z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
-                                z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
-                                z = torch.Tensor(z).to(device)
-                                z_init = torch.Tensor(z_init).to(device)
-                                outputs = model(inputs, z, z_init) 
-                        else:
+        for i,(inputs,  targets) in enumerate(tepoch): 
+            inputs, targets = process_for_training(inputs, targets)
+            if args.noise:
+                if args.time:
+                    if args.ensemble:
+                        for j in range(10):
                             z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
                             z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
                             z = torch.Tensor(z).to(device)
                             z_init = torch.Tensor(z_init).to(device)
-                            outputs = model(inputs, z, z_init)
+                            outputs = model(inputs, z, z_init) 
                     else:
-                        if args.ensemble:
-                            outputs = torch.zeros((targets.shape[0],10,1,1,targets.shape[3],targets.shape[4])).to(device)
-                            for i in range(10):
-                                z = np.random.normal( size=[inputs.shape[0], 100])
-                                z = torch.Tensor(z).to(device)
-                                outputs[:,i,...] = model(inputs, z)
-                        else:
+                        z = np.random.normal( size=[inputs.shape[0], args.nsteps_in,args.nsteps_in,32,32])
+                        z_init = np.random.normal( size=[inputs.shape[0],args.nsteps_in,32,32])
+                        z = torch.Tensor(z).to(device)
+                        z_init = torch.Tensor(z_init).to(device)
+                        outputs = model(inputs, z, z_init)
+                else:
+                    if args.ensemble:
+                        outputs = torch.zeros((targets.shape[0],10,1,1,targets.shape[3],targets.shape[4])).to(device)
+                        for j in range(10):
                             z = np.random.normal( size=[inputs.shape[0], 100])
                             z = torch.Tensor(z).to(device)
-
-                            outputs = model(inputs, z)
-                else:
-                    if args.mr:
-                        outputs, mr = model(inputs)
+                            outputs[:,j,...] = model(inputs, z)
                     else:
-                        outputs = model(inputs)
-                    
-                outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
-                print(full_pred.shape, outputs.shape, targets.shape)
-                full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
-                '''
-                for j in range(targets.shape[1]):
-                    
-                    running_mse += l2_crit(outputs[:,j,...], targets[:,j,...]).item()
-                    running_mae += l1_crit(outputs[:,j,...],targets[:,j,...]).item()                
-                    running_ssim += ssim_criterion(outputs[:,j,...], targets[:,j,...]).item()       
-                running_mse += l2_crit(outputs, targets).item()
-                
-                running_mae += l1_crit(outputs,targets).item()                
-                #running_ssim += ssim_criterion(outputs, targets).item()'''
-                                            
-    '''                                       
-    mse = running_mse/(len(data)*targets.shape[1])
-    mae = running_mae/(len(data)*targets.shape[1])
-    ssim = running_ssim/(len(data)*targets.shape[1])
-    mse = running_mse/len(data)
-    mae = running_mae/len(data)
-    ssim = running_ssim/len(data)
-    psnr = calculate_pnsr(mse, data[4])'''
+                        z = np.random.normal( size=[inputs.shape[0], 100])
+                        z = torch.Tensor(z).to(device)
+
+                        outputs = model(inputs, z)
+            else:
+                if args.mr:
+                    outputs, mr = model(inputs)
+                else:
+                    outputs = model(inputs)
+
+            outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
+            print(full_pred.shape, outputs.shape, targets.shape)
+            print(outputs.max())
+            print(i*args.batch_size, i*args.batch_size+outputs.shape[0])
+            full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
+            print(full_pred.mean())
+
     
     if args.ensemble:
+        print('saving', full_pred.mean())
         torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'_ensemble.pt')
     else:
         torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'.pt')

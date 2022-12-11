@@ -631,7 +631,7 @@ class ResNet1(nn.Module):
             return out  
         
 class ResNet2(nn.Module):
-    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=2):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=4):
         super(ResNet2, self).__init__()
         # First layer
         if noise:
@@ -1785,12 +1785,22 @@ class MultDownscaleConstraintsTime(nn.Module):
         self.pool = TimeDistributed(torch.nn.AvgPool2d(kernel_size=upsampling_factor))
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
+        y = y.clone()
         sum_y = self.pool(y)
         out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
     
-
+class AddDownscaleConstraintsTime(nn.Module):
+    def __init__(self, upsampling_factor):
+        super(AddDownscaleConstraintsTime, self).__init__()
+        self.pool = TimeDistributed(torch.nn.AvgPool2d(kernel_size=upsampling_factor))
+        self.upsampling_factor = upsampling_factor
+    def forward(self, y, lr):
+        y = y.clone()
+        sum_y = self.pool(y)
+        out =y+ torch.kron(lr-sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
+        return out
     
 class EnforcementOperatorTime(nn.Module):
     def __init__(self, upsampling_factor):
@@ -1798,6 +1808,7 @@ class EnforcementOperatorTime(nn.Module):
         self.pool = TimeDistributed(torch.nn.AvgPool2d(kernel_size=upsampling_factor))
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
+        y = y.clone()
         sum_y = self.pool(y)
         diff_P_x = torch.kron(lr-sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         sigma = torch.sign(-diff_P_x)
@@ -2067,7 +2078,7 @@ class DiscGateGRU(nn.Module):
     
     
 class ConvGRUGenerator(nn.Module):    
-    def __init__(self, number_channels=64, number_residual_blocks=3, upsampling_factor=2, time_steps=3):
+    def __init__(self, number_channels=64, number_residual_blocks=3, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=2, time_steps=3):
         super(ConvGRUGenerator, self).__init__()  
         self.initialize = InitialState()
         self.reflpadd1 = TimeDistributed(nn.ReflectionPad2d(1))
@@ -2083,7 +2094,19 @@ class ConvGRUGenerator(nn.Module):
             self.upsampling.append(ResidualBlockRNN(number_channels, number_channels, stride=1, activation='leaky_relu'))          
         self.reflpadd2 = TimeDistributed(nn.ReflectionPad2d(1))
         self.conv2 = TimeDistributed(nn.Conv2d(number_channels, 1, kernel_size=(3,3), padding=1))
-        self.constraint = SoftmaxConstraintsTime(upsampling_factor=4)
+        self.is_constraints = False
+        if constraints == 'softmax':
+            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor, cwindow_size=cwindow_size)
+            self.is_constraints = True
+        elif constraints == 'enforce_op':
+            self.constraints = EnforcementOperator(upsampling_factor=upsampling_factor)
+            self.is_constraints = True
+        elif constraints == 'add':
+            self.constraints = AddDownscaleConstraints(upsampling_factor=upsampling_factor)
+            self.is_constraints = True
+        elif constraints == 'mult':
+            self.constraints = MultDownscaleConstraints(upsampling_factor=upsampling_factor)
+            self.is_constraints = True
     
     def forward(self, low_res, noise, initial_noise):   
         initial_state = self.initialize(low_res[:,0,...], initial_noise)
@@ -2103,7 +2126,7 @@ class ConvGRUGenerator(nn.Module):
         return img_out
     
 class ConvGRUGeneratorDet(nn.Module):    
-    def __init__(self, number_channels=64, number_residual_blocks=3, upsampling_factor=2, time_steps=3, constraints='none'):
+    def __init__(self, number_channels=64, number_residual_blocks=3, upsampling_factor=2, time_steps=3, constraints='none', cwindow_size=2):
         super(ConvGRUGeneratorDet, self).__init__()  
         self.initialize = InitialStateDet()
         self.conv1 = TimeDistributed(nn.Conv2d(1, number_channels, kernel_size=(3,3), padding=1))
@@ -2119,10 +2142,13 @@ class ConvGRUGeneratorDet(nn.Module):
         self.conv2 = TimeDistributed(nn.Conv2d(number_channels, 1, kernel_size=(3,3), padding=1))
         self.is_constraints = False
         if constraints == 'softmax':
-            self.constraints = SoftmaxConstraintsTime(upsampling_factor=4)
+            self.constraints = SoftmaxConstraintsTime(upsampling_factor=upsampling_factor)
             self.is_constraints = True
         elif constraints == 'enforce_op':
             self.constraints = EnforcementOperatorTime(upsampling_factor=upsampling_factor)
+            self.is_constraints = True
+        elif constraints == 'add':
+            self.constraints = AddDownscaleConstraintsTime(upsampling_factor=upsampling_factor)
             self.is_constraints = True
         elif constraints == 'mult':
             self.constraints = MultDownscaleConstraintsTime(upsampling_factor=upsampling_factor)

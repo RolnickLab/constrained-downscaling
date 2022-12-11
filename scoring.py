@@ -59,22 +59,31 @@ def main_scoring(args):
         if args.ensemble:
             
             en_pred = torch.load('./data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'_ensemble.pt')
+            
 
             pred = torch.mean(en_pred, dim=1)
+            en_pred = en_pred.detach().cpu().numpy()
         else:
             
             pred = torch.load('./data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'.pt')
             
                 
         pred = pred.detach().cpu().numpy()
+        
         print(pred.shape)
+    elif args.model == 'temp':
+        pred = predict_T(args)
+        pred = pred.detach().cpu().numpy()
+    elif args.model == 'ql':
+        pred = predict_ql(args)
+        pred = pred.detach().cpu().numpy()
     for i,(lr, hr) in enumerate(val_data):
         im = lr.numpy()
         
         #print(hr.shape)
         for j in range(args.time_steps):
             if args.model == 'bilinear':
-                pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((4*lr.shape[2],4*lr.shape[2]), Image.BILINEAR))
+                pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((factor*lr.shape[2],factor*lr.shape[2]), Image.BILINEAR))
             elif args.model == 'bicubic':
                 pred[i,j,0,:,:] = np.array(Image.fromarray(im[j,0,...]).resize((factor*lr.shape[2],factor*lr.shape[2]), Image.BICUBIC))
             elif args.model == 'bicubic_frame':
@@ -89,6 +98,7 @@ def main_scoring(args):
             elif args.model=='frame_inter':
                 print(pred.shape, im.shape)
                 pred[i,j,0,... ] = 0.5*(im[0,0,...]+im[1,0,...])
+            
             '''
             mse_loss = l2_crit(torch.Tensor(pred[i,j,...]), hr[j,...]).item()
 
@@ -132,7 +142,8 @@ def main_scoring(args):
             mae += l1_crit(torch.Tensor(pred[i,:,:]), hr).item()
             ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0), hr.unsqueeze(0)).item()'''
             
-    
+    if args.model == 'bicubic' or args.model == 'kronecker':
+        torch.save(torch.Tensor(pred), './data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'.pt')
     #torch.save(torch.Tensor(pred[:128,:,:]).unsqueeze(1), './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
     
     print(input_val.shape[0])
@@ -147,10 +158,11 @@ def main_scoring(args):
     neg_mean *=1/(input_val.shape[0]*args.time_steps)
     #neg_num *=1/(input_val.shape[0]*args.time_steps)
     if args.mass_violation:
-        if args.time_sr:
-            mass_violation *= 1/(input_val.shape[0]*args.time_steps)
+        if args.model == 'bicubic_frame':
+            mass_violation *= 1/(input_val.shape[0]*2)
         else:
-            mass_violation *= 1/(input_val.shape[0]) #what is the 2 doing here?
+            mass_violation *= 1/(input_val.shape[0]*args.time_steps)
+        
     '''else:
         mse *= 1/input_val.shape[0]   
         mae *= 1/input_val.shape[0] 
@@ -205,6 +217,7 @@ def pearsonr(x, y):
     r_val = r_num / r_den
     return r_val
 
+'''
 def crps_ensemble(target, prediction):
     #print(target.shape, prediction.shape)
     crps_sum = 0
@@ -212,10 +225,10 @@ def crps_ensemble(target, prediction):
         for j in range(target.shape[1]):
             crps_sum += ps.crps_ensemble(target[i,j], prediction[:,i,j])
     
-    return crps_sum/(target.shape[0]*target.shape[1])
+    return crps_sum/(target.shape[0]*target.shape[1])'''
+
 
 '''
-
 def crps_ensemble(observation, forecasts):
     fc = forecasts.copy()
     fc.sort(axis=-1)
@@ -234,7 +247,27 @@ def crps_ensemble(observation, forecasts):
         weight = ((k+1)**2 - k**2) / fc.shape[-1]**2
         crps[above] += weight * (fc[...,i][above]-obs[above])
 
-    return crps'''
+    return np.mean(crps)'''
+
+def crps_ensemble(observation, forecasts):
+    fc = forecasts.copy()
+    fc.sort(axis=0)
+    obs = observation
+    fc_below = fc<obs[None,...]
+    crps = np.zeros_like(obs)
+    #print(fc.shape, obs.shape, crps.shape)
+    for i in range(fc.shape[0]):
+        below = fc_below[i,...]
+        weight = ((i+1)**2 - i**2) / fc.shape[-1]**2
+        crps[below] += weight * (obs[below]-fc[i,...][below])
+
+    for i in range(fc.shape[0]-1,-1,-1):
+        above  = ~fc_below[i,...]
+        k = fc.shape[0]-1-i
+        weight = ((k+1)**2 - k**2) / fc.shape[0]**2
+        crps[above] += weight * (fc[i,...][above]-obs[above])
+
+    return np.mean(crps)
                                             
 def create_report(scores, args):
     args_dict = args_to_dict(args)
@@ -248,7 +281,13 @@ def args_to_dict(args):
     
                                             
 def save_dict(dictionary, args):
-    w = csv.writer(open('./data/score_log/'+args.model_id+ '_' + args.test_val_train+'.csv', 'w'))
+    if args.model=='temp':
+        fn = './data/score_log/jmlr_t4_'+args.model_id+ '_' + args.test_val_train+'.csv'
+    elif args.model =='ql':
+        fn = './data/score_log/jmlr_ql4_'+args.model_id+ '_' + args.test_val_train+'.csv'
+    else:
+        fn = './data/score_log/'+args.model_id+ '_' + args.test_val_train+'.csv'
+    w = csv.writer(open(fn, 'w'))
     # loop over dictionary keys and values
     for key, val in dictionary.items():
         # write every key and value to file
@@ -259,25 +298,26 @@ def predict_T(args):
     #T = p7(qv*rho)
     #load Qv
     qv = torch.load('./data/prediction/dataset41'+'_jmlr_qv4_'+args.model_id+ '_' + args.test_val_train+'.pt')
+    ql = torch.load('./data/prediction/dataset44'+'_jmlr_ql4_'+args.model_id+ '_' + args.test_val_train+'.pt')
+    #lv = 2.5008*1e6+(1846.1-4218)*(hr_t-273.16)
+    s = torch.load('./data/prediction/dataset43'+'_jmlr_s4_'+args.model_id+ '_' + args.test_val_train+'.pt')
     
-    #load rho
-    qv = torch.load('./data/prediction/dataset42'+'_jmlr_rho4'+args.model_id+ '_' + args.test_val_train+'.pt')
-    
-    pred = 850/(qv*rho)
+    pred = (s-2.5008*1e6*qv+(1846.1-4218)*273.16*qv)/((1-qv)*1004.7+ql*1846.1+(1846.1-4218)*qv)
     #save T
-    torch.save(pred, './data/prediction/dataset45'+'_jmlr_t4'+args.model_id+ '_' + args.test_val_train+'.pt')
+    torch.save(pred, './data/prediction/dataset45'+'_jmlr_t4_'+args.model_id+ '_' + args.test_val_train+'.pt')
     return pred
 
 def predict_ql(args):
     #ql = (s-lv*qv-(1-qv)*1004.7*hr_t)/(hr_t*1846.1)
     #load T
-    hr_t = torch.load('./data/prediction/dataset45'+'_jmlr_t4'+args.model_id+ '_' + args.test_val_train+'.pt')
+    hr_t = torch.load('./data/prediction/dataset45'+'_jmlr_t4_'+args.model_id+ '_' + args.test_val_train+'.pt')
     lv = 2.5008*1e6+(1846.1-4218)*(hr_t-273.16)
     #load qv
-    qv = torch.load('./data/prediction/dataset42'+'_jmlr_rho4'+args.model_id+ '_' + args.test_val_train+'.pt')
+    qv = torch.load('./data/prediction/dataset42'+'_jmlr_rho4_'+args.model_id+ '_' + args.test_val_train+'.pt')
     #load s
-    s = torch.load('./data/prediction/dataset43'+'_jmlr_s4'+args.model_id+ '_' + args.test_val_train+'.pt')
+    s = torch.load('./data/prediction/dataset43'+'_jmlr_s4_'+args.model_id+ '_' + args.test_val_train+'.pt')
     pred = (s-lv*qv-(1-qv)*1004.7*hr_t)/(hr_t*1846.1)
+    torch.save(pred, './data/prediction/dataset44'+'_jmlr_ql4_'+args.model_id+ '_' + args.test_val_train+'.pt')
     return pred
 
     
