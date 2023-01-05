@@ -142,7 +142,7 @@ def main_scoring(args):
             mae += l1_crit(torch.Tensor(pred[i,:,:]), hr).item()
             ssim += ssim_criterion(torch.Tensor(pred[i,:,:]).unsqueeze(0), hr.unsqueeze(0)).item()'''
             
-    if args.model == 'bicubic' or args.model == 'kronecker':
+    if args.model == 'bicubic' or args.model == 'kronecker' or args.model == 'frame':
         torch.save(torch.Tensor(pred), './data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'.pt')
     #torch.save(torch.Tensor(pred[:128,:,:]).unsqueeze(1), './data/prediction/'+args.dataset+'_'+args.model_id+'_prediction.pt')
     

@@ -49,7 +49,7 @@ def add_arguments():
 
 def main(args):
     #load data
-    #torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
     data = load_data(args)
     print(args.epochs)
     

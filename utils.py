@@ -46,11 +46,11 @@ def load_data(args):
         target_train = (target_train - args.mean)/args.std
         target_val = (target_val - args.mean)/args.std  
     elif args.scale == 'minmax':
-        for i in range(args.dim_channels):
-            input_train[:,0,i,...] = (input_train[:,0,i,...]-min_val[i]) /(max_val[i]-min_val[i])
-            target_train[:,0,i,...] = (target_train[:,0,i,...] -min_val[i])/(max_val[i]-min_val[i])
-            input_val[:,0,i,...] = (input_val[:,0,i,...]-min_val[i])/(max_val[i]-min_val[i])
-            target_val[:,0,i,...] = (target_val[:,0,i,...]-min_val[i])/(max_val[i]-min_val[i])
+        
+        input_train = (input_train-min_val[0]) /(max_val[0]-min_val[0])
+        target_train = (target_train -min_val[0])/(max_val[0]-min_val[0])
+        input_val = (input_val-min_val[0])/(max_val[0]-min_val[0])
+        target_val = (target_val-min_val[0])/(max_val[0]-min_val[0])
     elif args.scale == 'minmax_fixed':
         input_train = input_train /args.max
         target_train = target_train /args.max
@@ -167,12 +167,12 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
         targets = targets*args.std+args.mean 
     elif args.scale == 'minmax':
         if args.ensemble:
-            outputs[:,:,0,0,...] = outputs[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
+            outputs[:,:,0,0,...] = outputs[:,:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
             targets[:,0,0,...] = targets[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device)
         else:
-            for i in range(args.dim_channels):
-                outputs[:,0,i,...] = outputs[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device) 
-                targets[:,0,i,...] = targets[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device)
+            
+            outputs = outputs*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
+            targets = targets*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device)
     elif args.scale == 'minmax_fixed':
         outputs = outputs*args.max         
         targets = targets*args.max

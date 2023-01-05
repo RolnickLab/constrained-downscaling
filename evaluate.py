@@ -51,14 +51,14 @@ def add_arguments():
     parser.add_argument("--time_sr", default=False)
     parser.add_argument("--constraints_window_size", default=4, type=int)
     parser.add_argument("--ensemble", default=False)
-    parser.add_argument("--test_val_train", default='val')
+    parser.add_argument("--test_val_train", default='test')
     
     
     return parser.parse_args()
 
 
 def main_eval(args):
-
+    torch.cuda.empty_cache()
     data = load_data(args)
     if args.double:
         model2 = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=4, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)

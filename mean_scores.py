@@ -36,7 +36,7 @@ def main(args):
     
                                             
 def save_dict(dictionary, args):
-    w = csv.writer(open('./data/score_log/'+args.model_id+'_means.csv', 'w'))
+    w = csv.writer(open('./data/score_log/'+args.model_id+'_test.csv', 'w'))
     # loop over dictionary keys and values
     for key, val in dictionary.items():
         # write every key and value to file
