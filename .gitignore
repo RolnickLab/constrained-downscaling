@@ -1,5 +1,6 @@
 /github
 /data
+/notebooks
 /models
 .ipynb_checkpoints/
 __pycache__/
