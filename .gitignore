@@ -1,8 +1,0 @@
-/github
-/data
-/notebooks
-/models
-.ipynb_checkpoints/
-__pycache__/
-evaluate.ipynb
-.DS_Store

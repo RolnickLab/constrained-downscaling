@@ -35,41 +35,15 @@ def load_data(args):
         max_val[i] = target_train[:,0,i,...].max()
         min_val[i] = target_train[:,0,i,...].min()
     #transform data
-    if args.scale == 'standard':          
-        input_train = (input_train - mean)/std
-        input_val = (input_val - mean)/std
-        target_train = (target_train - mean)/std
-        target_val = (target_val - mean)/std
-    elif args.scale == 'standard_fixed':
-        input_train = (input_train - args.mean)/args.std
-        input_val = (input_val - args.mean)/args.std
-        target_train = (target_train - args.mean)/args.std
-        target_val = (target_val - args.mean)/args.std  
+   
     elif args.scale == 'minmax':
-        
-        input_train = (input_train-min_val[0]) /(max_val[0]-min_val[0])
-        target_train = (target_train -min_val[0])/(max_val[0]-min_val[0])
-        input_val = (input_val-min_val[0])/(max_val[0]-min_val[0])
-        target_val = (target_val-min_val[0])/(max_val[0]-min_val[0])
-    elif args.scale == 'minmax_fixed':
-        input_train = input_train /args.max
-        target_train = target_train /args.max
-        input_val = input_val/args.max
-        target_val = target_val/args.max
-    elif args.scale == 'minus_to_one_fixed':
-        input_train = 2*input_train /args.max-1
-        target_train = 2*target_train /args.max -1
-        input_val = 2*input_val/args.max -1
-        target_val = 2*target_val/args.max -1
-    elif args.scale == 'log':
-        input_train = torch.log(input_train+1)
-        target_train = torch.log(target_train+1)
-        input_val = torch.log(input_val+1)
-        target_val = torch.log(target_val+1)  
-    print(input_train.mean(), input_train.std(), input_train.max(), input_train.min())
-    print(target_train.mean(), target_train.std(), target_train.max(), target_train.min())
-    print(input_val.mean(), input_val.std(), input_val.max(), input_val.min())
-    print(target_val.mean(), target_val.std(), target_val.max(), target_val.min())
+        for i in range(args.dim_channels):
+            input_train[:,0,i,...] = (input_train[:,0,i,...]-min_val[i]) /(max_val[i]-min_val[i])
+            target_train[:,0,i,...] = (target_train[:,0,i,...] -min_val[i])/(max_val[i]-min_val[i])
+            input_val[:,0,i,...] = (input_val[:,0,i,...]-min_val[i])/(max_val[i]-min_val[i])
+            target_val[:,0,i,...] = (target_val[:,0,i,...]-min_val[i])/(max_val[i]-min_val[i])
+    
+
     train_data = TensorDataset(input_train,  target_train)
     val_data = TensorDataset(input_val, target_val)
     train = DataLoader(train_data, batch_size=args.batch_size, shuffle=True) 
@@ -77,56 +51,18 @@ def load_data(args):
     return [train, val, mean, std, max_val, train_shape_in, train_shape_out, val_shape_in, val_shape_out]
 
 def load_model(args, discriminator=False):
-
     if discriminator:
-        #if args.time:
-        #    model = models.DiscriminatorRNN()
-        #else:
         model = models.Discriminator()
     else:
-        if args.noise:
-            if args.model == 'conv_gru':
-                model = models.ConvGRUGenerator()
-            elif args.model == 'gan_4x':
-                model = models.ResNet2UpNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
-            else:
-                model = models.ResNetNoise(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
-        elif args.model == 'mr_constr':
-            model = models.MRResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, downscale_constraints=args.downscale_constraints,  softmax_constraints=args.softmax_constraints, dim=1, output_mr=args.mr)
-        elif args.model == 'conv_gru_det':
+        if args.model == 'convgru':
             model = models.ConvGRUGeneratorDet( number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, time_steps=3, constraints=args.constraints, cwindow_size=args.constraints_window_size)
-        elif args.model == 'conv_gru_det_con':
-            model = models.ConvGRUGeneratorDetCon()
-        elif args.model == 'frame_gru':
-            model = models.FrameConvGRU()
-        elif args.model == 'voxel_flow':
-            model = models.VoxelFlow()
-        elif args.model == 'time_end_to_end':
+        elif args.model == 'voxelconvgru':
             model = models.TimeEndToEndModel( number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, time_steps=3, constraints=args.constraints)
-        elif args.model == 'resnet_new':
-            model = models.CNNUp()
-        elif args.model == 'esrgan':
-            model = models.ESRGANGenerator()
-        elif args.model == 'srgan':
-            model = models.SRGANGenerator(n_residual_blocks=args.number_residual_blocks, upsample_factor=args.upsampling_factor)
-        elif args.model == 'res_2up':
-            model = models.ResNet2Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr,  cwindow_size= args.constraints_window_size)
-        elif args.model == 'res_4up':
-            model = models.ResNet4Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
-        elif args.model == 'res_3up':
-            model = models.ResNet3Up()
-            #model = models.ResNet3Up(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, output_mr=args.mr)
-        elif args.model == 'motifnet':
-            model = models.MotifNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
-        elif args.model == 'motifnet_learnable':
-            model = models.MotifNetLearnBasis(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1, l2_reg=args.l2_reg)
-        elif args.model == 'mixture':
-            model = models.MixtureModel(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=1)
         elif args.model == 'gan':
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels)
-        elif args.model == 'resnet2':
+        elif args.model == 'cnn':
             model = models.ResNet2(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
-        elif args.model == 'resnet3':
+        elif args.model == 'cnn3':
             model = models.ResNet3(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
     model.to(device)
     return model
@@ -167,12 +103,12 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
         targets = targets*args.std+args.mean 
     elif args.scale == 'minmax':
         if args.ensemble:
-            outputs[:,:,0,0,...] = outputs[:,:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
+            outputs[:,:,0,0,...] = outputs[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
             targets[:,0,0,...] = targets[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device)
         else:
-            
-            outputs = outputs*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
-            targets = targets*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device)
+            for i in range(args.dim_channels):
+                outputs[:,0,i,...] = outputs[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device) 
+                targets[:,0,i,...] = targets[:,0,i,...]*(max_val[i].to(device)-min_val[i].to(device))+min_val[i].to(device)
     elif args.scale == 'minmax_fixed':
         outputs = outputs*args.max         
         targets = targets*args.max
@@ -187,15 +123,10 @@ def process_for_eval(outputs, targets, mean, std, max_val, args):
 def is_gan(args):
     if args.model == 'gan':
         return True
-    if args.model == 'gan_4x':
-        return True
-    elif args.model == 'conv_gru':
-        return True
     else: 
         return False
     
-def is_noisegan(args):
-    return is_gan.args and args.noise
+
 
 
 
