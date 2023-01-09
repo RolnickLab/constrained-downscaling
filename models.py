@@ -109,9 +109,9 @@ class AddChannels(nn.Module):
         return torch.sum(y, dim=1).unsqueeze(1)
          
         
-class ResNet2(nn.Module):
+class ResNet(nn.Module):
     def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=4):
-        super(ResNet2, self).__init__()
+        super(ResNet, self).__init__()
         # First layer
         if noise:
             self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)

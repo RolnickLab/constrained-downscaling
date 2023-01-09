@@ -15,12 +15,14 @@ def run_training(args, data):
     print('#params:', sum(p.numel() for p in model.parameters()))
     optimizer = get_optimizer(args, model)
     criterion = get_criterion(args)
+    
     if is_gan(args):   
         discriminator_model = load_model(args, discriminator=True)
         print('#params discr.:', sum(p.numel() for p in discriminator_model.parameters()))
         optimizer_discr = get_optimizer(args, discriminator_model)
         criterion_discr = get_criterion(args, discriminator=True)      
     best = np.inf
+    
     for epoch in range(args.epochs):
         running_loss = 0    
         running_discr_loss = 0
@@ -53,7 +55,7 @@ def run_training(args, data):
         print('Val loss: {:.5f}'.format(val_loss))
         checkpoint(model, val_loss, best, args, epoch)
         best = np.minimum(best, val_loss)
-    data = load_data(args)        
+    data = load_data(args.test_val_train, args)        
     scores = evaluate_model( data, args)
     
     
@@ -138,10 +140,7 @@ def evaluate_model(data, args, add_string=None):
                     z = torch.Tensor(z).to(device)
                     outputs[:,j,...] = model(inputs, z)
             else:
-                if args.mr:
-                    outputs, mr = model(inputs)
-                else:
-                    outputs = model(inputs)
+                outputs = model(inputs)
             outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
             full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
     if is_gan(args):
@@ -166,11 +165,9 @@ def args_to_dict(args):
     return vars(args)
     
                                             
-def save_dict(dictionary, args, add_string):
-    if add_string:
-        w = csv.writer(open('./data/score_log/'+args.model_id+add_string+'.csv', 'w'))
-    else:
-        w = csv.writer(open('./data/score_log/'+args.model_id+'.csv', 'w'))
+def save_dict(dictionary, args):
+
+    w = csv.writer(open('./data/score_log/'+args.model_id+'.csv', 'w'))
         
     # loop over dictionary keys and values
     for key, val in dictionary.items():

@@ -32,26 +32,40 @@ $ conda env create -f requirements.yml
 $ conda activate constrained_ds
 ```
 
-## Run training
+## Run training 
 
 To run our standard CNN withour constrained run
 
 ```sh
-$ python main.py --dataset era5_twc --model_id twc_noconstraints --constraints none
+$ python main.py --dataset era5_twc --model cnn --model_id twc_cnn_noconstraints --constraints none
 ```
 
-to run with softmax constraining run
+to run with softmax constraining (hard constraining) run
 
 ```sh
-$ python main.py --dataset era5_twc --model_id twc_smconstraints --constraints softmax
+$ python main.py --dataset era5_twc --model cnn --model_id twc_cnn_softmaxconstraints --constraints softmax
 ```
 
+to run with soft constraining run, with a factor of alpha run
+
+```sh
+$ python main.py --dataset era5_twc --model cnn --model_id twc_cnn_softconstraints --constraints soft --loss mass_constraints --alpha 0.99
+```
+
+For other setups: 
+--model can be either cnn, gan, convgru, flowconvgru
+--constraints can be none, softmax, gh, mult, add, soft
+other arguents are --epochs, --lr (learning rate), --number_residual_blocks, --weight_decay
 
 ## Run inference
 
+An example evaluation for the unconstrained model:
+
 ```sh
-$ python evaluatee.py --dataset era5_twc --model_id twc_noconstraints --constraints none
+$ python main.py --training_evalonly evalonly --dataset era5_twc --model cnn --model_id twc_cnn_noconstraints --constraints none
 ```
+
+It produces a csv file with all metrics on either validation or test set.
 
 ## Citation
 
@@ -63,5 +77,7 @@ If you find this repository helpful please consider to cite our work
       publisher = {arXiv}, 
       year = {2022}
     }
+    
+
 
 
