@@ -176,6 +176,7 @@ def calculate_scores(args):
         en_pred = en_pred.detach().cpu().numpy()
     else:
         pred = torch.load('./data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'.pt')
+        #torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'.pt')
 
     pred = pred.detach().cpu().numpy()
     j = 0    
@@ -234,7 +235,7 @@ def args_to_dict(args):
     
                                             
 def save_dict(dictionary, args):
-    w = csv.writer(open('./data/score_log/'+args.model_id+'.csv', 'w'))      
+    w = csv.writer(open('./data/'+args.model_id+'.csv', 'w'))      
     # loop over dictionary keys and values
     for key, val in dictionary.items():
         # write every key and value to file
