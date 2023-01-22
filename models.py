@@ -79,18 +79,15 @@ class EnforcementOperator(nn.Module):
         return out 
     
 class SoftmaxConstraints(nn.Module):
-    def __init__(self, upsampling_factor, cwindow_size, exp_factor=1):
+    def __init__(self, upsampling_factor, exp_factor=1):
         super(SoftmaxConstraints, self).__init__()
-        self.pool = torch.nn.AvgPool2d(kernel_size=cwindow_size)
-        self.lr_pool = torch.nn.AvgPool2d(kernel_size=int(cwindow_size/upsampling_factor))
         self.upsampling_factor = upsampling_factor
-        self.cwindow_size = cwindow_size
         self.exp_factor = exp_factor
     def forward(self, y, lr):
         y = torch.exp(y*self.exp_factor)
         sum_y = self.pool(y)
         lr_sum = self.lr_pool(lr)
-        out = y*torch.kron(lr_sum*1/sum_y, torch.ones((self.cwindow_size,self.cwindow_size)).to('cuda'))
+        out = y*torch.kron(lr_sum*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
 
@@ -110,7 +107,7 @@ class AddChannels(nn.Module):
          
         
 class ResNet(nn.Module):
-    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1, cwindow_size=4):
+    def __init__(self, number_channels=64, number_residual_blocks=4, upsampling_factor=2, noise=False, constraints='none', dim=1):
         super(ResNet, self).__init__()
         # First layer
         if noise:
@@ -136,7 +133,7 @@ class ResNet(nn.Module):
         #optional renomralization layer
         self.is_constraints = False
         if constraints == 'softmax':
-            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor, cwindow_size=cwindow_size)
+            self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor)
             self.is_constraints = True
         elif constraints == 'enforce_op':
             self.constraints = EnforcementOperator(upsampling_factor=upsampling_factor)

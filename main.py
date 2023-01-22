@@ -2,6 +2,7 @@ from training import run_training
 from utils import load_data
 import numpy as np
 import argparse
+import os
 import torch
 
 def add_arguments():
@@ -22,10 +23,15 @@ def add_arguments():
     parser.add_argument("--alpha", default=0.99, type=float)
     parser.add_argument("--test_val_train", default="val")
     parser.add_argument("--training_evalonly", default="training")
+    parser.add_argument("--dim_channels", default=1, type=int)
     return parser.parse_args()
 
 def main(args):
     #load data
+    if not os.path.exists('./models'):
+        os.makedirs('./models')
+    if not os.path.exists('./data/prediction'):
+        os.makedirs('./data/prediction')
     if args.training_evalonly == 'training':
         data = load_data(args)
         #run training

@@ -1,4 +1,4 @@
-name: condtrained_ds
+name: constrained-ds
 channels:
   - pytorch
   - nvidia

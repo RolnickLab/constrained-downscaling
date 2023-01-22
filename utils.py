@@ -2,20 +2,18 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import models
-import Learnable_basis
 from torch.utils.data import DataLoader, TensorDataset
 device = 'cuda'
 
 def load_data(args):
-    input_train = torch.load('./data/train/input_train.pt')
-    target_train = torch.load('./data/train/target_train.pt')
-    
+    input_train = torch.load('./data/'+args.dataset+'/train/input_train.pt')
+    target_train = torch.load('./data/'+args.dataset+'/train/target_train.pt')
     if args.test_val_train == 'test':
-        input_val = torch.load('./data/test/input_test.pt')
-        target_val = torch.load('./data/test/target_test.pt')
+        input_val = torch.load('./data/'+args.dataset+'/test/input_test.pt')
+        target_val = torch.load('./data/'+args.dataset+'/test/target_test.pt')
     elif args.test_val_train == 'val':
-        input_val = torch.load('./data/val/input_val.pt')
-        target_val = torch.load('./data/val/target_val.pt')
+        input_val = torch.load('./data/'+args.dataset+'/val/input_val.pt')
+        target_val = torch.load('./data/'+args.dataset+'/val/target_val.pt')
     elif args.test_val_train == 'train':
         input_val = input_train
         target_val = target_train
@@ -59,9 +57,10 @@ def load_model(args, discriminator=False):
         elif args.model == 'flowconvgru':
             model = models.TimeEndToEndModel( number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, time_steps=3, constraints=args.constraints)
         elif args.model == 'gan':
-            model = models.ResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels)
+            model = models.ResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=(args.model=='gan'), constraints=args.constraints, dim=args.dim_channels)
         elif args.model == 'cnn':
-            model = models.ResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=args.noise, constraints=args.constraints, dim=args.dim_channels, cwindow_size= args.constraints_window_size)
+            model = models.ResNet(number_channels=args.number_channels, number_residual_blocks=args.number_residual_blocks, upsampling_factor=args.upsampling_factor, noise=(args.model=='gan'), constraints=args.constraints, dim=args.dim_channels)
+    model = model.to(device)
     return model
 
 def get_optimizer(args, model):
@@ -91,7 +90,7 @@ def process_for_training(inputs, targets):
     return inputs,  targets
 
 def process_for_eval(outputs, targets, mean, std, max_val, args): 
-    if args.gan:
+    if args.model == 'gan':
         outputs[:,:,0,0,...] = outputs[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device) 
         targets[:,0,0,...] = targets[:,0,0,...]*(max_val[0].to(device)-min_val[0].to(device))+min_val[0].to(device)
     else:
