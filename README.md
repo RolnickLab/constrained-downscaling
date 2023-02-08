@@ -55,7 +55,7 @@ $ python main.py --dataset era5_sr_data --model cnn --model_id twc_cnn_softconst
 
 For other setups: 
 --model can be either cnn, gan, convgru, flowconvgru (last two require different data sets)
---constraints can be none, softmax, gh, mult, add, soft
+--constraints can be none, softmax, scadd, mult, add, soft
 other arguents are --epochs, --lr (learning rate), --number_residual_blocks, --weight_decay
 
 ## Run inference

@@ -19,7 +19,7 @@ def add_arguments():
     parser.add_argument("--optimizer", default="adam")
     parser.add_argument("--weight_decay", default=1e-9, type=float)
     parser.add_argument("--batch_size", default=64, type=int) 
-    parser.add_argument("--epochs", default=1, type=int)
+    parser.add_argument("--epochs", default=200, type=int)
     parser.add_argument("--alpha", default=0.99, type=float)
     parser.add_argument("--test_val_train", default="val")
     parser.add_argument("--training_evalonly", default="training")

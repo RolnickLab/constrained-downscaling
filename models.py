@@ -82,15 +82,13 @@ class SoftmaxConstraints(nn.Module):
     def __init__(self, upsampling_factor, exp_factor=1):
         super(SoftmaxConstraints, self).__init__()
         self.upsampling_factor = upsampling_factor
-        self.exp_factor = exp_factor
+        self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
     def forward(self, y, lr):
-        y = torch.exp(y*self.exp_factor)
+        y = torch.exp(y)
         sum_y = self.pool(y)
-        lr_sum = self.lr_pool(lr)
-        out = y*torch.kron(lr_sum*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
+        out = y*torch.kron(lr*1/sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
-
 
 class MultIn(nn.Module):
     def __init__(self, factor):
