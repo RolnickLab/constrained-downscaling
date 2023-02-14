@@ -32,7 +32,7 @@ def run_training(args, data):
         for (inputs,  targets) in data[0]:          
             inputs, targets = process_for_training(inputs, targets)
             if is_gan(args):
-                loss, discr_loss = gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, data[0], args, criterion_mr)
+                loss, discr_loss = gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, data[0], args)
                 running_loss += loss
                 running_discr_loss += discr_loss
             else:
@@ -43,7 +43,6 @@ def run_training(args, data):
             dicsr_loss = running_discr_loss/len(data)
             print('Epoch {}, Train Loss: {:.5f}, Discr. Loss{:.5f}'.format(
                 epoch+1, loss, discr_loss))      
-            disc_loss.append(discr_loss)
         else:
             print('Epoch {}, Train Loss: {:.5f}'.format(epoch+1, loss))
             
@@ -68,7 +67,7 @@ def optimizer_step(model, optimizer, criterion, inputs, targets, tepoch, args, d
     
 def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, criterion, criterion_discr, inputs, targets, tepoch, args):
     optimizer_discr.zero_grad()
-    z = np.random.normal( size=[inputs.shape[0], 100])
+    z = np.random.normal( size=[inputs.shape[0], 100,1,1])
     z = torch.Tensor(z).to(device)
     outputs = model(inputs, z)
     batch_size = inputs.shape[0]   
@@ -83,11 +82,9 @@ def gan_optimizer_step(model, discriminator_model, optimizer, optimizer_discr, c
     d_loss.backward()
     optimizer_discr.step() 
     optimizer.zero_grad()
-    reg_loss = criterion(outputs, targets)
-    loss = args.reg_factor*reg_loss
     # Adversarial loss for real and fake images (relativistic average GAN)
     adversarial_loss = criterion_discr(discriminator_model(outputs), real_label)
-    loss += args.adv_factor * adversarial_loss
+    loss = criterion(outputs, targets) +args.adv_factor * adversarial_loss
     loss.backward()
     optimizer.step()       
     return loss.item(), d_loss.item()
@@ -97,17 +94,15 @@ def validate_model(model, criterion, data, best, epoch, args, discriminator_mode
     running_loss = 0      
     for i, (inputs, targets) in enumerate(data):     
         inputs, targets = process_for_training(inputs, targets)
-        if is_gan(args): 
-            z = np.random.normal( size=[inputs.shape[0], 100])
+        if args.model == 'gan':
+            z = np.random.normal( size=[inputs.shape[0], 100, 1, 1])
             z = torch.Tensor(z).to(device)
             outputs = model(inputs, z)
-            reg_loss = criterion(outputs, targets)
-            loss = args.reg_factor*reg_loss
             batch_size = inputs.shape[0]
             real_label = torch.full((batch_size, 1), 1, dtype=outputs.dtype).to(device)
             fake_output = discriminator_model(outputs.detach())
             adversarial_loss = criterion_discr(fake_output.detach(), real_label)
-            loss += args.adv_factor * adversarial_loss
+            loss = criterion(outputs, targets) + args.adv_factor * adversarial_loss
         else:
             outputs = model(inputs)
             loss = get_loss(outputs, targets, inputs, args) 
@@ -127,14 +122,17 @@ def evaluate_model(data, args):
     model = load_model(args)
     load_weights(model, args.model_id)
     model.eval()
-    full_pred = torch.zeros(data[8]) 
+    if args.model == 'gan':
+        full_pred = torch.zeros((data[8][0],10,1,1,data[8][3],data[8][4]))
+    else:
+        full_pred = torch.zeros(data[8]) 
     with tqdm(data[1], unit="batch") as tepoch:     
         for i,(inputs,  targets) in enumerate(tepoch): 
             inputs, targets = process_for_training(inputs, targets)
-            if is_gan(args):
+            if args.model == 'gan':
                 outputs = torch.zeros((targets.shape[0],10,1,1,targets.shape[3],targets.shape[4])).to(device)
                 for j in range(10):
-                    z = np.random.normal( size=[inputs.shape[0], 100])
+                    z = np.random.normal( size=[inputs.shape[0], 100,1,1])
                     z = torch.Tensor(z).to(device)
                     outputs[:,j,...] = model(inputs, z)
             else:
@@ -142,7 +140,6 @@ def evaluate_model(data, args):
             outputs, targets = process_for_eval(outputs, targets,data[2], data[3], data[4], args) 
             full_pred[i*args.batch_size:i*args.batch_size+outputs.shape[0],...] = outputs.detach().cpu()
     if is_gan(args):
-        print('saving', full_pred.mean())
         torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'_ensemble.pt')
     else:
         torch.save(full_pred, './data/prediction/'+args.dataset+'_'+args.model_id+ '_' + args.test_val_train+'.pt')

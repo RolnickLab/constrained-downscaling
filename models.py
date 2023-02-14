@@ -65,9 +65,9 @@ class AddDownscaleConstraints(nn.Module):
         out =y+ torch.kron(lr-sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
-class EnforcementOperator(nn.Module):
+class ScAddDownscaleConstraints(nn.Module):
     def __init__(self, upsampling_factor):
-        super(EnforcementOperator, self).__init__()
+        super(ScAddDownscaleConstraints, self).__init__()
         self.pool = torch.nn.AvgPool2d(kernel_size=upsampling_factor)
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
@@ -110,7 +110,7 @@ class ResNet(nn.Module):
         # First layer
         if noise:
             self.conv_trans0 = nn.ConvTranspose2d(100, 1, kernel_size=(32,32), padding=0, stride=1)
-            self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
+            self.conv1 = nn.Sequential(nn.Conv2d(dim+1, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         else:
             self.conv1 = nn.Sequential(nn.Conv2d(dim, number_channels, kernel_size=3, stride=1, padding=1), nn.ReLU(inplace=True))
         #Residual Blocks
@@ -133,8 +133,8 @@ class ResNet(nn.Module):
         if constraints == 'softmax':
             self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor)
             self.is_constraints = True
-        elif constraints == 'enforce_op':
-            self.constraints = EnforcementOperator(upsampling_factor=upsampling_factor)
+        elif constraints == 'scadd':
+            self.constraints = ScAddDownscaleConstraints(upsampling_factor=upsampling_factor)
             self.is_constraints = True
         elif constraints == 'add':
             self.constraints = AddDownscaleConstraints(upsampling_factor=upsampling_factor)
@@ -146,7 +146,7 @@ class ResNet(nn.Module):
         self.dim = dim    
         self.noise = noise
         
-    def forward(self, x, mr=None, z=None): 
+    def forward(self, x, z=None): 
         if self.noise:
             out = self.conv_trans0(z)
             out = self.conv1(torch.cat(( x[:,0,...],out), dim=1))
@@ -159,7 +159,7 @@ class ResNet(nn.Module):
             out = self.conv4(out)
             if self.is_constraints:
                 out = self.constraints(out,  x[:,0,...])
-            return out  
+            return out.unsqueeze(1)  
         else:
             out = self.conv1(x[:,0,...])
             for layer in self.upsampling:
@@ -203,8 +203,8 @@ class ResNet3(nn.Module):
         if constraints == 'softmax':
             self.constraints = SoftmaxConstraints(upsampling_factor=upsampling_factor, cwindow_size=cwindow_size)
             self.is_constraints = True
-        elif constraints == 'enforce_op':
-            self.constraints = EnforcementOperator(upsampling_factor=upsampling_factor)
+        elif constraints == 'scadd':
+            self.constraints = ScAddDownscaleConstraints(upsampling_factor=upsampling_factor)
             self.is_constraints = True
         elif constraints == 'add':
             self.constraints = AddDownscaleConstraints(upsampling_factor=upsampling_factor)
@@ -325,9 +325,9 @@ class AddDownscaleConstraintsTime(nn.Module):
         out =y+ torch.kron(lr-sum_y, torch.ones((self.upsampling_factor,self.upsampling_factor)).to('cuda'))
         return out
     
-class EnforcementOperatorTime(nn.Module):
+class ScAddDownscaleConstraintsTime(nn.Module):
     def __init__(self, upsampling_factor):
-        super(EnforcementOperatorTime, self).__init__()
+        super(ScAddDownscaleConstraintsTime, self).__init__()
         self.pool = TimeDistributed(torch.nn.AvgPool2d(kernel_size=upsampling_factor))
         self.upsampling_factor = upsampling_factor
     def forward(self, y, lr):
@@ -526,8 +526,8 @@ class ConvGRUGeneratorDet(nn.Module):
         if constraints == 'softmax':
             self.constraints = SoftmaxConstraintsTime(upsampling_factor=upsampling_factor)
             self.is_constraints = True
-        elif constraints == 'enforce_op':
-            self.constraints = EnforcementOperatorTime(upsampling_factor=upsampling_factor)
+        elif constraints == 'scadd':
+            self.constraints = ScAddDownscaleConstraintsTime(upsampling_factor=upsampling_factor)
             self.is_constraints = True
         elif constraints == 'add':
             self.constraints = AddDownscaleConstraintsTime(upsampling_factor=upsampling_factor)

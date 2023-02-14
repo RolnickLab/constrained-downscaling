@@ -24,6 +24,7 @@ def add_arguments():
     parser.add_argument("--test_val_train", default="val")
     parser.add_argument("--training_evalonly", default="training")
     parser.add_argument("--dim_channels", default=1, type=int)
+    parser.add_argument("--adv_factor", default=0.0001, type=float)
     return parser.parse_args()
 
 def main(args):
