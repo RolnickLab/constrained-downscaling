@@ -41,13 +41,13 @@ To run our standard CNN withour constrained run
 $ python main.py --dataset era5_sr_data --model cnn --model_id twc_cnn_noconstraints --constraints none
 ```
 
-to run with softmax constraining (hard constraining) run
+To run with softmax constraining (hard constraining) run
 
 ```sh
 $ python main.py --dataset era5_sr_data --model cnn --model_id twc_cnn_softmaxconstraints --constraints softmax
 ```
 
-to run with soft constraining run, with a factor of alpha run
+To run with soft constraining run, with a factor of alpha run
 
 ```sh
 $ python main.py --dataset era5_sr_data --model cnn --model_id twc_cnn_softconstraints --constraints soft --loss mass_constraints --alpha 0.99
@@ -70,7 +70,7 @@ It produces a csv file with all metrics on either validation or test set.
 
 ## Citation
 
-If you find this repository helpful please consider to cite our work
+If you find this repository helpful please consider citing our work
 
     @misc{harder2022,
     author = {Harder, Paula and Yang, Qidong and Ramesh, Venkatesh and Sattigeri, Prasanna and Hernandez-Garcia, Alex and Watson, Campbell and Szwarcman, Daniela and Rolnick, David},
