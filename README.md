@@ -63,7 +63,7 @@ other arguents are --epochs, --lr (learning rate), --number_residual_blocks, --w
 An example evaluation for the unconstrained model:
 
 ```sh
-$ python main.py --training_evalonly evalonly --dataset era5_twc --model cnn --model_id twc_cnn_noconstraints --constraints none
+$ python main.py --training_evalonly evalonly --dataset era5_sr_data --model cnn --model_id twc_cnn_noconstraints --constraints none
 ```
 
 It produces a csv file with all metrics on either validation or test set.

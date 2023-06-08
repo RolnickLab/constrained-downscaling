@@ -40,7 +40,7 @@ def main(args):
     else:       
         data = load_data(args)
         #run training
-        evaluate_model(args, data)
+        evaluate_model(data, args)
         
 if __name__ == '__main__':
     args = add_arguments()
