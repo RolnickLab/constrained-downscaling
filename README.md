@@ -2,6 +2,7 @@
 
 This code belongs to a paper currently under review, a preprint can be found at: https://arxiv.org/pdf/2208.05424.pdf
 
+
 Abstract: *The availability of reliable, high-resolution climate and weather data is important to inform long-term decisions on climate adaptation and mitigation and to guide rapid responses to extreme events. Forecasting models are limited by computational costs and, therefore, often generate coarse-resolution predictions. Statistical downscaling can provide an efficient method of upsampling low-resolution data. In this field, deep learning has been applied successfully, often using image super-resolution methods from computer vision. However, despite achieving visually compelling results in some cases, such models frequently violate conservation laws when predicting physical variables. In order to conserve physical quantities, we develop methods that guarantee physical constraints are satisfied by a deep learning downscaling model while also improving their performance according to traditional metrics. We compare different constraining approaches and demonstrate their applicability across different neural architectures as well as a variety of climate and weather data sets. While our novel methodologies enable faster and more accurate climate predictions, we also show how they can improve super-resolution for satellite data and standard data sets.*
 
 ## Setup
@@ -69,6 +70,8 @@ $ python main.py --training_evalonly evalonly --dataset era5_sr_data --model cnn
 It produces a csv file with all metrics on either validation or test set.
 
 ## Citation
+
+The doi is: 10.5281/zenodo.8150694
 
 If you find this repository helpful please consider citing our work
 
