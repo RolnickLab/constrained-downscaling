@@ -8,7 +8,7 @@ import torch
 def add_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="era5_twc", help="choose a data set to use")
-    parser.add_argument("--model", default="resnet2")
+    parser.add_argument("--model", default="cnn")
     parser.add_argument("--model_id", default="test")
     parser.add_argument("--upsampling_factor", default=4, type=int)
     parser.add_argument("--constraints", default="none") 

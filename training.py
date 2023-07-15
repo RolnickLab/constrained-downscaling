@@ -239,7 +239,7 @@ def save_dict(dictionary, args):
         w.writerow([key, val])
 
 def load_weights(model, model_id):
-    PATH = '/home/harder/constrained-downscaling/models/'+model_id+'.pth'
+    PATH = './models/'+model_id+'.pth'
     checkpoint = torch.load(PATH) # ie, model_best.pth.tar
     model.load_state_dict(checkpoint['state_dict'])
     model.to('cuda')
