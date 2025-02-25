@@ -17,7 +17,7 @@ $ conda activate constrained-ds
 
 ## Get the data
 
-One of our main data sets, ERA5 total columnt water, 4x upsampling, can be downloaded in a ML-ready form at: https://drive.google.com/file/d/1IENhP1-aTYyqOkRcnmCIvxXkvUW2Qbdx/view?usp=sharing
+One of our main data sets, ERA5 total columnt water, 4x upsampling, can be downloaded in a ML-ready form at: https://drive.google.com/file/d/1IENhP1-aTYyqOkRcnmCIvxXkvUW2Qbdx/view?usp=sharing. For the other datasets, see bottom of the page.
 
 You can use wget:
 ```sh
@@ -81,6 +81,14 @@ If you find this repository helpful please consider citing our work
       publisher = {arXiv}, 
       year = {2022}
     }
+
+## Addional datasets
+
+The WRF dataset can be found here for the 9km run: https://drive.google.com/file/d/1AJ1JkTk8ZhUkSI378oQTMSG9m9Y9H698/view?usp=drive_link
+and for the 3km run: https://drive.google.com/file/d/1VbO8VSpgdWcOB2PK6L9fRgluGwrbH6wL/view?usp=drive_link
+
+
+The NorESM dataset here: https://drive.google.com/file/d/1D5tLE7cGcvh3dap-P3VOLEOK_7FqdChF/view?usp=sharing.
     
 
 
